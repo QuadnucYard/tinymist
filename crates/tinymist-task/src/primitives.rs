@@ -1,4 +1,5 @@
 pub use tinymist_world::args::{ExportTarget, OutputFormat, PdfStandard, TaskWhen};
+use typst::layout::PageRanges;
 
 use core::fmt;
 use std::hash::{Hash, Hasher};
@@ -199,7 +200,14 @@ pub struct Pages(pub RangeInclusive<Option<NonZeroUsize>>);
 
 impl Pages {
     /// Selects the first page.
-    pub const FIRST: Pages = Pages(NonZeroUsize::new(1)..=None);
+    pub const FIRST: Pages = Pages(NonZeroUsize::new(1)..=NonZeroUsize::new(1));
+
+    /// Returns true if the given page is contained in the range.
+    pub fn contains(&self, page: NonZeroUsize) -> bool {
+        let start = self.0.start().is_none_or(|s| s <= page);
+        let end = self.0.end().is_none_or(|e| e >= page);
+        start && end
+    }
 }
 
 impl FromStr for Pages {
@@ -232,6 +240,11 @@ impl FromStr for Pages {
             [_, _, _, ..] => Err("page export range must have a single hyphen"),
         }
     }
+}
+
+/// The ranges of the pages to be exported as specified by the user.
+pub fn exported_page_ranges(pages: &[Pages]) -> PageRanges {
+    PageRanges::new(pages.iter().map(|it| it.0.clone()).collect())
 }
 
 impl fmt::Display for Pages {

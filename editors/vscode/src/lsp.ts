@@ -749,9 +749,15 @@ export class LanguageState {
 
 export const tinymist = new LanguageState();
 
+// Type definitions for export responses (untagged union)
+export type OnExportResponse =
+  | null
+  | string    // File path for single file export OR base64 for single memory export
+  | string[]; // File paths for multi-file export OR base64 strings for multi-page memory export
+
 function exportCommand(command: string) {
-  return (uri: string, extraOpts?: any) => {
-    return tinymist.executeCommand<string>(command, [uri, ...(extraOpts ? [extraOpts] : [])]);
+  return (uri: string, extraOpts?: Record<string, unknown>, inMemory?: boolean): Promise<OnExportResponse> => {
+    return tinymist.executeCommand<OnExportResponse>(command, [uri, extraOpts ?? {} , inMemory ?? false]);
   };
 }
 

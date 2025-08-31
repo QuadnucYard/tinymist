@@ -146,6 +146,23 @@ mod polymorphic {
         pub task: ProjectTask,
         /// Whether to open the exported file(s) after the export is done.
         pub open: bool,
+        /// Whether to export to memory instead of writing to file.
+        pub in_memory: bool,
+    }
+
+    /// The response to an export request.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(untagged)]
+    pub enum OnExportResponse {
+        None,
+        /// Export to file - returns the file path if successful.
+        File(PathBuf),
+        /// Export to file - returns the file path if successful.
+        FileList(Vec<PathBuf>),
+        /// Export to memory - returns base64-encoded binary data.
+        Memory(String),
+
+        MemoryList(Vec<String>),
     }
 
     /// A request to format the document.
@@ -333,7 +350,7 @@ mod polymorphic {
     #[serde(untagged)]
     pub enum CompilerQueryResponse {
         /// The response to the on export request.
-        OnExport(Option<PathBuf>),
+        OnExport(OnExportResponse),
         /// The response to the hover request.
         Hover(Option<Hover>),
         /// The response to the goto definition request.

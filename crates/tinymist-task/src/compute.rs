@@ -64,18 +64,16 @@ impl<F: CompilerFeat> ExportComputation<F, TypstPagedDocument> for SvgExport {
         doc: &Arc<TypstPagedDocument>,
         config: &ExportSvgTask,
     ) -> Result<String> {
-        let (is_first, merged_gap) = get_page_selection(&config.export)?;
-
-        let first_page = doc.pages.first();
-
-        Ok(if is_first {
-            if let Some(first_page) = first_page {
-                typst_svg::svg(first_page)
-            } else {
-                typst_svg::svg_merged(doc, merged_gap)
+        Ok(match get_page_selection(&config.export)? {
+            FinalPageSelection::First => {
+                if let Some(first_page) = doc.pages.first() {
+                    typst_svg::svg(first_page)
+                } else {
+                    typst_svg::svg_merged(doc, Default::default())
+                }
             }
-        } else {
-            typst_svg::svg_merged(doc, merged_gap)
+            FinalPageSelection::Merged(gap) => typst_svg::svg_merged(doc, gap),
+            FinalPageSelection::Ranges(items) => todo!(),
         })
     }
 }
@@ -111,17 +109,19 @@ impl<F: CompilerFeat> ExportComputation<F, TypstPagedDocument> for PngExport {
             Color::WHITE
         };
 
-        let (is_first, merged_gap) = get_page_selection(&config.export)?;
-
         let ppp = ppi / 72.;
-        let pixmap = if is_first {
-            if let Some(first_page) = doc.pages.first() {
-                typst_render::render(first_page, ppp)
-            } else {
-                typst_render::render_merged(doc, ppp, merged_gap, Some(fill))
+        let pixmap = match get_page_selection(&config.export)? {
+            FinalPageSelection::First => {
+                if let Some(first_page) = doc.pages.first() {
+                    typst_render::render(first_page, ppp)
+                } else {
+                    typst_render::render_merged(doc, ppp, Default::default(), Some(fill))
+                }
             }
-        } else {
-            typst_render::render_merged(doc, ppp, merged_gap, Some(fill))
+            FinalPageSelection::Merged(gap) => {
+                typst_render::render_merged(doc, ppp, gap, Some(fill))
+            }
+            FinalPageSelection::Ranges(items) => todo!(),
         };
 
         pixmap
@@ -307,28 +307,35 @@ fn serialize(data: &impl serde::Serialize, format: &str, pretty: bool) -> Result
     })
 }
 
-/// Gets legacy page selection
-pub fn get_page_selection(task: &crate::ExportTask) -> Result<(bool, Abs)> {
-    let is_first = task
-        .transform
-        .iter()
-        .any(|t| matches!(t, ExportTransform::Pages { ranges, .. } if ranges == &[Pages::FIRST]));
+pub enum FinalPageSelection {
+    First,
+    Merged(Abs),
+    Ranges(Vec<Pages>),
+}
 
-    let mut gap_res = Abs::default();
-    if !is_first {
-        for trans in &task.transform {
-            if let ExportTransform::Merge { gap } = trans {
+/// Gets legacy page selection
+pub fn get_page_selection(task: &crate::ExportTask) -> Result<FinalPageSelection> {
+    for trans in &task.transform {
+        match trans {
+            ExportTransform::Pages { ranges } => {
+                if ranges == &[Pages::FIRST] {
+                    return Ok(FinalPageSelection::First);
+                }
+                return Ok(FinalPageSelection::Ranges(ranges.clone()));
+            }
+            ExportTransform::Merge { gap } => {
                 let gap = gap
                     .as_deref()
                     .map(parse_length)
                     .transpose()
                     .context_ut("failed to parse gap")?;
-                gap_res = gap.unwrap_or_default();
+                return Ok(FinalPageSelection::Merged(gap.unwrap_or_default()));
             }
+            _ => {}
         }
     }
 
-    Ok((is_first, gap_res))
+    Ok(FinalPageSelection::First)
 }
 
 fn parse_length(gap: &str) -> Result<Abs> {

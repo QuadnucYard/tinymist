@@ -1,6 +1,7 @@
 //! The actor that handles various document export, like PDF and SVG export.
 
-use std::path::PathBuf;
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, OnceLock};
@@ -10,12 +11,15 @@ use reflexo::ImmutPath;
 use reflexo_typst::{Bytes, CompilationTask, ExportComputation};
 use sync_ls::{internal_error, just_future};
 use tinymist_project::LspWorld;
-use tinymist_query::OnExportRequest;
+use tinymist_query::{OnExportRequest, OnExportResponse};
 use tinymist_std::error::prelude::*;
 use tinymist_std::fs::paths::write_atomic;
 use tinymist_std::path::PathClean;
 use tinymist_std::typst::TypstDocument;
-use tinymist_task::{get_page_selection, ExportMarkdownTask, ExportTarget, PdfExport, TextExport};
+use tinymist_task::{
+    exported_page_ranges, get_page_selection, ExportMarkdownTask, ExportTarget, FinalPageSelection,
+    PdfExport, TextExport,
+};
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
 use typst::foundations::IntoValue;
@@ -33,6 +37,9 @@ use crate::project::{
     ExportTeXTask, ExportTextTask, LspCompiledArtifact, LspComputeGraph, ProjectClient,
     ProjectTask, QueryTask, TaskWhen, PROJECT_ROUTE_USER_ACTION_PRIORITY,
 };
+use crate::task::export_image::{
+    export_image, export_image_2, CompileConfig, CompileConfig2, ImageExportFormat,
+};
 use crate::world::TaskInputs;
 use crate::ServerState;
 use crate::{actor::editor::EditorRequest, tool::word_count};
@@ -40,7 +47,12 @@ use crate::{actor::editor::EditorRequest, tool::word_count};
 impl ServerState {
     /// Exports the current document.
     pub fn on_export(&mut self, req: OnExportRequest) -> QueryFuture {
-        let OnExportRequest { path, task, open } = req;
+        let OnExportRequest {
+            path,
+            task,
+            open,
+            in_memory,
+        } = req;
         let entry = self.entry_resolver().resolve(Some(path.as_path().into()));
         let lock_dir = self.entry_resolver().resolve_lock(&entry);
 
@@ -71,12 +83,23 @@ impl ServerState {
             let is_html = matches!(task, ProjectTask::ExportHtml { .. });
             // todo: we may get some file missing errors here
             let artifact = CompiledArtifact::from_graph(snap.clone(), is_html);
-            let res = ExportTask::do_export(task, artifact, lock_dir)
-                .await
-                .map_err(internal_error)?;
+
+            let res = if in_memory {
+                // Export to memory and return base64-encoded data
+                ExportTask::do_export_to_memory(task, artifact)
+                    .await
+                    .map_err(internal_error)?
+            } else {
+                // Export to file and return path
+                ExportTask::do_export(task, artifact, lock_dir)
+                    .await
+                    .map_err(internal_error)?
+            };
+
             if let Some(update_dep) = update_dep {
                 tokio::spawn(update_dep(snap));
             }
+
             #[cfg(not(feature = "open"))]
             if open {
                 log::warn!("open is not supported in this build, ignoring");
@@ -93,7 +116,8 @@ impl ServerState {
                     ::open::with_detached(path, "explorer")
                 }
 
-                if let Some(Some(path)) = open.then_some(res.as_ref()) {
+                // Only open for file exports
+                if let (true, OnExportResponse::File(ref path)) = (open, &res) {
                     log::trace!("open with system default apps: {path:?}");
                     do_open(path).log_error("failed to open with system default apps");
                 }
@@ -247,23 +271,41 @@ impl ExportTask {
         Some(())
     }
 
+    /// Exports a document to memory, returning the binary data directly.
+    pub async fn do_export_to_memory(
+        task: ProjectTask,
+        artifact: LspCompiledArtifact,
+    ) -> Result<OnExportResponse> {
+        use base64::prelude::*;
+
+        let data = Self::do_export_common(task, artifact, 0).await?;
+        Ok(match data {
+            ExportArtifact::Single(bytes) => {
+                OnExportResponse::Memory(BASE64_STANDARD.encode(bytes.as_slice()))
+            }
+            ExportArtifact::Paged(items) => OnExportResponse::MemoryList(
+                items
+                    .into_iter()
+                    .map(|(_, b)| BASE64_STANDARD.encode(b.as_slice()))
+                    .collect(),
+            ),
+        })
+    }
+
     /// Exports a document.
     pub async fn do_export(
         task: ProjectTask,
         artifact: LspCompiledArtifact,
         lock_dir: Option<ImmutPath>,
-    ) -> Result<Option<PathBuf>> {
-        use reflexo_vec2svg::DefaultExportFeature;
-        use ProjectTask::*;
-
-        let CompiledArtifact { graph, doc, .. } = artifact;
+    ) -> Result<OnExportResponse> {
+        let CompiledArtifact { graph, .. } = &artifact;
 
         // Prepare the output path.
         let entry = graph.snap.world.entry_state();
         let config = task.as_export().unwrap();
         let output = config.output.clone().unwrap_or_default();
         let Some(write_to) = output.substitute(&entry) else {
-            return Ok(None);
+            return Ok(OnExportResponse::None);
         };
         let write_to = if write_to.is_relative() {
             let cwd = std::env::current_dir().context("failed to get current directory")?;
@@ -309,12 +351,36 @@ impl ExportTask {
             Some(())
         });
 
+        // Generate the data using common logic
+        let data = Self::do_export_common(task.clone(), artifact, export_id).await?;
+
+        // todo
+        // let to = write_to.clone();
+        // tokio::task::spawn_blocking(move || write_atomic(to, data))
+        //     .await
+        //     .context_ut("failed to export")??;
+
+        log::debug!("ExportTask({export_id}): export complete");
+        Ok(OnExportResponse::File(write_to))
+    }
+
+    /// Common export logic that generates the binary data without handling output.
+    async fn do_export_common(
+        task: ProjectTask,
+        artifact: LspCompiledArtifact,
+        export_id: usize,
+    ) -> Result<ExportArtifact> {
+        use reflexo_vec2svg::DefaultExportFeature;
+        use ProjectTask::*;
+
+        let CompiledArtifact { graph, doc, .. } = artifact;
+
         // Prepare the document.
         let doc = doc.context("cannot export with compilation errors")?;
 
         // Prepare data.
         let kind2 = task.clone();
-        let data = FutureFolder::compute(move |_| -> Result<Bytes> {
+        let data = FutureFolder::compute(move |_| -> Result<ExportArtifact> {
             let doc = &doc;
 
             // static BLANK: Lazy<Page> = Lazy::new(Page::default);
@@ -349,10 +415,11 @@ impl ExportTask {
                     .first()
                     .context("no first page to export")
             };
+
             Ok(match kind2 {
-                Preview(..) => Bytes::new([]),
+                Preview(..) => ExportArtifact::Single(Bytes::new([])),
                 // todo: more pdf flags
-                ExportPdf(config) => PdfExport::run(&graph, paged_doc()?, &config)?,
+                ExportPdf(config) => ExportArtifact::Single(PdfExport::run(&graph, paged_doc()?, &config)?),
                 Query(QueryTask {
                     export: _,
                     output_extension: _,
@@ -376,25 +443,25 @@ impl ExportTask {
                         })
                         .collect();
 
-                    if one {
+                    ExportArtifact::Single(if one {
                         let Some(value) = mapped.first() else {
                             bail!("no such field found for element");
                         };
                         serialize(value, &format, pretty).map(Bytes::from_string)?
                     } else {
                         serialize(&mapped, &format, pretty).map(Bytes::from_string)?
-                    }
+                    })
                 }
-                ExportHtml(ExportHtmlTask { export: _ }) => Bytes::from_string(
+                ExportHtml(ExportHtmlTask { export: _ }) => ExportArtifact::Single(Bytes::from_string(
                     typst_html::html(html_doc()?)
                         .map_err(|e| format!("export error: {e:?}"))
-                        .context_ut("failed to export to html")?,
+                        .context_ut("failed to export to html")?),
                 ),
-                ExportSvgHtml(ExportHtmlTask { export: _ }) => Bytes::from_string(
+                ExportSvgHtml(ExportHtmlTask { export: _ }) => ExportArtifact::Single(Bytes::from_string(
                     reflexo_vec2svg::render_svg_html::<DefaultExportFeature>(paged_doc()?),
-                ),
+                )),
                 ExportText(ExportTextTask { export: _ }) => {
-                    Bytes::from_string(TextExport::run_on_doc(doc)?)
+                    ExportArtifact::Single(Bytes::from_string(TextExport::run_on_doc(doc)?))
                 }
                 ExportMd(ExportMarkdownTask {
                     processor,
@@ -411,7 +478,7 @@ impl ExportTask {
                         .convert()
                         .map_err(|e| anyhow::anyhow!("failed to convert to markdown: {e}"))?;
 
-                    Bytes::from_string(conv)
+                    ExportArtifact::Single(Bytes::from_string(conv))
                 }
                 // todo: duplicated code with ExportMd
                 ExportTeX(ExportTeXTask {
@@ -430,16 +497,17 @@ impl ExportTask {
                         .convert()
                         .map_err(|e| anyhow::anyhow!("failed to convert to latex: {e}"))?;
 
-                    Bytes::from_string(conv)
+                    ExportArtifact::Single(Bytes::from_string(conv))
                 }
                 ExportSvg(ExportSvgTask { export }) => {
-                    let (is_first, merged_gap) = get_page_selection(&export)?;
-
-                    Bytes::from_string(if is_first {
-                        typst_svg::svg(first_page()?)
-                    } else {
-                        typst_svg::svg_merged(paged_doc()?, merged_gap)
-                    })
+                    match get_page_selection(&export)? {
+                        FinalPageSelection::First => ExportArtifact::Single(Bytes::from_string(typst_svg::svg(first_page()?))),
+                        FinalPageSelection::Merged(gap) =>   ExportArtifact::Single(Bytes::from_string( typst_svg::svg_merged(paged_doc()?, gap))),
+                        FinalPageSelection::Ranges(items) =>  ExportArtifact::Paged(export_image_2(paged_doc()?, &CompileConfig2 {
+                            ppi: 72.0,
+                            pages: Some(exported_page_ranges(&items))
+                        }, ImageExportFormat::Svg)?.into_iter().map(|item| (item.index, item.bytes)).collect()),
+                    }
                 }
                 ExportPng(ExportPngTask { export, ppi, fill }) => {
                     let ppi = ppi.to_f32();
@@ -453,32 +521,58 @@ impl ExportTask {
                         Color::WHITE
                     };
 
-                    let (is_first, merged_gap) = get_page_selection(&export)?;
 
-                    let pixmap = if is_first {
-                        typst_render::render(first_page()?, ppi / 72.)
-                    } else {
-                        typst_render::render_merged(paged_doc()?, ppi / 72., merged_gap, Some(fill))
-                    };
+                    match get_page_selection(&export)? {
+                        FinalPageSelection::First => {
+                            let pixmap = typst_render::render(first_page()?, ppi / 72.);
+                                ExportArtifact::Single(Bytes::new(
+                                    pixmap
+                                        .encode_png()
+                                        .map_err(|err| anyhow::anyhow!("failed to encode PNG ({err})"))?,
+                                ))
+                        }
+                        FinalPageSelection::Merged(gap) => {
+                            let pixmap =         typst_render::render_merged(paged_doc()?, ppi / 72., gap, Some(fill));
+                                ExportArtifact::Single(Bytes::new(
+                                    pixmap
+                                        .encode_png()
+                                        .map_err(|err| anyhow::anyhow!("failed to encode PNG ({err})"))?,
+                                ))
+                        }
+                        FinalPageSelection::Ranges(ranges) => {
+                            let paged_doc = paged_doc()?;
+                            let mut res = vec![];
+                            for (i, page) in paged_doc.pages.iter().enumerate() {
+                                if !ranges.iter().any(|r| r.contains(NonZeroUsize::new(i + 1).unwrap())) {
+                                    continue;
+                                }
+                                let pixmap = typst_render::render(page, ppi / 72.);
+                                res.push((
+                                    i,
+                                    Bytes::new(
+                                        pixmap
+                                            .encode_png()
+                                            .map_err(|err| anyhow::anyhow!("failed to encode PNG ({err})"))?,
+                                    ),
+                                ));
 
-                    Bytes::new(
-                        pixmap
-                            .encode_png()
-                            .map_err(|err| anyhow::anyhow!("failed to encode PNG ({err})"))?,
-                    )
+                            }
+                            ExportArtifact::Paged(res   )
+                        }
+                    }
+
                 }
             })
         })
         .await??;
 
-        let to = write_to.clone();
-        tokio::task::spawn_blocking(move || write_atomic(to, data))
-            .await
-            .context_ut("failed to export")??;
-
-        log::debug!("ExportTask({export_id}): export complete");
-        Ok(Some(write_to))
+        Ok(data)
     }
+}
+
+enum ExportArtifact {
+    Single(Bytes),
+    Paged(Vec<(usize, Bytes)>),
 }
 
 /// User configuration for export.
