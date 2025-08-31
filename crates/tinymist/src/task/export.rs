@@ -1,7 +1,5 @@
 //! The actor that handles various document export, like PDF and SVG export.
 
-use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, OnceLock};
@@ -17,12 +15,12 @@ use tinymist_std::fs::paths::write_atomic;
 use tinymist_std::path::PathClean;
 use tinymist_std::typst::TypstDocument;
 use tinymist_task::{
-    exported_page_ranges, get_page_selection, ExportMarkdownTask, ExportTarget, FinalPageSelection,
-    PdfExport, TextExport,
+    DocumentQuery, ExportMarkdownTask, ExportTarget, ImageOutput, PdfExport, PngExport, SvgExport,
+    TextExport,
 };
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
-use typst::foundations::IntoValue;
+use typst::ecow::EcoString;
 use typst::visualize::Color;
 
 use futures::Future;
@@ -33,12 +31,9 @@ use super::SyncTaskFactory;
 use crate::lsp::query::QueryFuture;
 use crate::project::{
     update_lock, ApplyProjectTask, CompiledArtifact, DevEvent, DevExportEvent, EntryReader,
-    ExportHtmlTask, ExportPdfTask, ExportPngTask, ExportSvgTask, ExportTask as ProjectExportTask,
-    ExportTeXTask, ExportTextTask, LspCompiledArtifact, LspComputeGraph, ProjectClient,
-    ProjectTask, QueryTask, TaskWhen, PROJECT_ROUTE_USER_ACTION_PRIORITY,
-};
-use crate::task::export_image::{
-    export_image, export_image_2, CompileConfig, CompileConfig2, ImageExportFormat,
+    ExportHtmlTask, ExportPdfTask, ExportTask as ProjectExportTask, ExportTeXTask, ExportTextTask,
+    LspCompiledArtifact, LspComputeGraph, ProjectClient, ProjectTask, TaskWhen,
+    PROJECT_ROUTE_USER_ACTION_PRIORITY,
 };
 use crate::world::TaskInputs;
 use crate::ServerState;
@@ -51,7 +46,7 @@ impl ServerState {
             path,
             task,
             open,
-            in_memory,
+            write,
         } = req;
         let entry = self.entry_resolver().resolve(Some(path.as_path().into()));
         let lock_dir = self.entry_resolver().resolve_lock(&entry);
@@ -84,7 +79,7 @@ impl ServerState {
             // todo: we may get some file missing errors here
             let artifact = CompiledArtifact::from_graph(snap.clone(), is_html);
 
-            let res = if in_memory {
+            let res = if !write {
                 // Export to memory and return base64-encoded data
                 ExportTask::do_export_to_memory(task, artifact)
                     .await
@@ -409,60 +404,19 @@ impl ExportTask {
                     .as_ref()
                     .map_err(|e| e.clone())
             };
-            let first_page = || {
-                paged_doc()?
-                    .pages
-                    .first()
-                    .context("no first page to export")
-            };
 
             Ok(match kind2 {
-                Preview(..) => ExportArtifact::Single(Bytes::new([])),
+                Preview(..) => Bytes::new([]).into(),
                 // todo: more pdf flags
-                ExportPdf(config) => ExportArtifact::Single(PdfExport::run(&graph, paged_doc()?, &config)?),
-                Query(QueryTask {
-                    export: _,
-                    output_extension: _,
-                    format,
-                    selector,
-                    field,
-                    one,
-                }) => {
-                    let pretty = false;
-                    let elements = reflexo_typst::query::retrieve(&graph.world(), &selector, doc)
-                        .map_err(|e| anyhow::anyhow!("failed to retrieve: {e}"))?;
-                    if one && elements.len() != 1 {
-                        bail!("expected exactly one element, found {}", elements.len());
-                    }
-
-                    let mapped: Vec<_> = elements
-                        .into_iter()
-                        .filter_map(|c| match &field {
-                            Some(field) => c.get_by_name(field).ok(),
-                            _ => Some(c.into_value()),
-                        })
-                        .collect();
-
-                    ExportArtifact::Single(if one {
-                        let Some(value) = mapped.first() else {
-                            bail!("no such field found for element");
-                        };
-                        serialize(value, &format, pretty).map(Bytes::from_string)?
-                    } else {
-                        serialize(&mapped, &format, pretty).map(Bytes::from_string)?
-                    })
-                }
-                ExportHtml(ExportHtmlTask { export: _ }) => ExportArtifact::Single(Bytes::from_string(
+                ExportPdf(config) =>PdfExport::run(&graph, paged_doc()?, &config)?.into(),
+                Query(config) => DocumentQuery::run(&graph, paged_doc()?, &config)??.into(),
+                ExportHtml(ExportHtmlTask { export: _ }) =>
                     typst_html::html(html_doc()?)
                         .map_err(|e| format!("export error: {e:?}"))
-                        .context_ut("failed to export to html")?),
-                ),
-                ExportSvgHtml(ExportHtmlTask { export: _ }) => ExportArtifact::Single(Bytes::from_string(
-                    reflexo_vec2svg::render_svg_html::<DefaultExportFeature>(paged_doc()?),
-                )),
-                ExportText(ExportTextTask { export: _ }) => {
-                    ExportArtifact::Single(Bytes::from_string(TextExport::run_on_doc(doc)?))
-                }
+                        .context_ut("failed to export to html")?.into(),
+                ExportSvgHtml(ExportHtmlTask { export: _ }) =>
+                    reflexo_vec2svg::render_svg_html::<DefaultExportFeature>(paged_doc()?).into(),
+                ExportText(ExportTextTask { export: _ }) => TextExport::run_on_doc(doc)?.into(),
                 ExportMd(ExportMarkdownTask {
                     processor,
                     assets_path,
@@ -477,8 +431,7 @@ impl ExportTask {
                         })
                         .convert()
                         .map_err(|e| anyhow::anyhow!("failed to convert to markdown: {e}"))?;
-
-                    ExportArtifact::Single(Bytes::from_string(conv))
+                    conv.into()
                 }
                 // todo: duplicated code with ExportMd
                 ExportTeX(ExportTeXTask {
@@ -496,72 +449,10 @@ impl ExportTask {
                         })
                         .convert()
                         .map_err(|e| anyhow::anyhow!("failed to convert to latex: {e}"))?;
-
-                    ExportArtifact::Single(Bytes::from_string(conv))
+                    conv.into()
                 }
-                ExportSvg(ExportSvgTask { export }) => {
-                    match get_page_selection(&export)? {
-                        FinalPageSelection::First => ExportArtifact::Single(Bytes::from_string(typst_svg::svg(first_page()?))),
-                        FinalPageSelection::Merged(gap) =>   ExportArtifact::Single(Bytes::from_string( typst_svg::svg_merged(paged_doc()?, gap))),
-                        FinalPageSelection::Ranges(items) =>  ExportArtifact::Paged(export_image_2(paged_doc()?, &CompileConfig2 {
-                            ppi: 72.0,
-                            pages: Some(exported_page_ranges(&items))
-                        }, ImageExportFormat::Svg)?.into_iter().map(|item| (item.index, item.bytes)).collect()),
-                    }
-                }
-                ExportPng(ExportPngTask { export, ppi, fill }) => {
-                    let ppi = ppi.to_f32();
-                    if ppi <= 1e-6 {
-                        bail!("invalid ppi: {ppi}");
-                    }
-
-                    let fill = if let Some(fill) = fill {
-                        parse_color(fill).map_err(|err| anyhow::anyhow!("invalid fill ({err})"))?
-                    } else {
-                        Color::WHITE
-                    };
-
-
-                    match get_page_selection(&export)? {
-                        FinalPageSelection::First => {
-                            let pixmap = typst_render::render(first_page()?, ppi / 72.);
-                                ExportArtifact::Single(Bytes::new(
-                                    pixmap
-                                        .encode_png()
-                                        .map_err(|err| anyhow::anyhow!("failed to encode PNG ({err})"))?,
-                                ))
-                        }
-                        FinalPageSelection::Merged(gap) => {
-                            let pixmap =         typst_render::render_merged(paged_doc()?, ppi / 72., gap, Some(fill));
-                                ExportArtifact::Single(Bytes::new(
-                                    pixmap
-                                        .encode_png()
-                                        .map_err(|err| anyhow::anyhow!("failed to encode PNG ({err})"))?,
-                                ))
-                        }
-                        FinalPageSelection::Ranges(ranges) => {
-                            let paged_doc = paged_doc()?;
-                            let mut res = vec![];
-                            for (i, page) in paged_doc.pages.iter().enumerate() {
-                                if !ranges.iter().any(|r| r.contains(NonZeroUsize::new(i + 1).unwrap())) {
-                                    continue;
-                                }
-                                let pixmap = typst_render::render(page, ppi / 72.);
-                                res.push((
-                                    i,
-                                    Bytes::new(
-                                        pixmap
-                                            .encode_png()
-                                            .map_err(|err| anyhow::anyhow!("failed to encode PNG ({err})"))?,
-                                    ),
-                                ));
-
-                            }
-                            ExportArtifact::Paged(res   )
-                        }
-                    }
-
-                }
+                ExportSvg(config) => SvgExport::run(&graph, paged_doc()?, &config)?.into(),
+                ExportPng(config) => PngExport::run(&graph, paged_doc()?,& config)?.into(),
             })
         })
         .await??;
@@ -573,6 +464,48 @@ impl ExportTask {
 enum ExportArtifact {
     Single(Bytes),
     Paged(Vec<(usize, Bytes)>),
+}
+
+impl From<Bytes> for ExportArtifact {
+    fn from(value: Bytes) -> Self {
+        ExportArtifact::Single(value)
+    }
+}
+
+impl From<String> for ExportArtifact {
+    fn from(value: String) -> Self {
+        ExportArtifact::Single(Bytes::from_string(value))
+    }
+}
+
+impl From<EcoString> for ExportArtifact {
+    fn from(value: EcoString) -> Self {
+        ExportArtifact::Single(Bytes::from_string(value))
+    }
+}
+
+impl From<ImageOutput<Bytes>> for ExportArtifact {
+    fn from(value: ImageOutput<Bytes>) -> Self {
+        match value {
+            ImageOutput::Merged(b) => ExportArtifact::Single(b),
+            ImageOutput::Paged(v) => {
+                ExportArtifact::Paged(v.into_iter().map(|item| (item.page, item.value)).collect())
+            }
+        }
+    }
+}
+
+impl From<ImageOutput<String>> for ExportArtifact {
+    fn from(value: ImageOutput<String>) -> Self {
+        match value {
+            ImageOutput::Merged(b) => ExportArtifact::Single(Bytes::from_string(b)),
+            ImageOutput::Paged(v) => ExportArtifact::Paged(
+                v.into_iter()
+                    .map(|item| (item.page, Bytes::from_string(item.value)))
+                    .collect(),
+            ),
+        }
+    }
 }
 
 /// User configuration for export.
@@ -596,26 +529,13 @@ impl Default for ExportUserConfig {
                     output: None,
                     transform: vec![],
                 },
+                pages: None,
                 pdf_standards: vec![],
                 creation_timestamp: None,
             }),
             count_words: false,
             development: false,
         }
-    }
-}
-
-fn parse_color(fill: String) -> Result<Color> {
-    match fill.as_str() {
-        "black" => Ok(Color::BLACK),
-        "white" => Ok(Color::WHITE),
-        "red" => Ok(Color::RED),
-        "green" => Ok(Color::GREEN),
-        "blue" => Ok(Color::BLUE),
-        hex if hex.starts_with('#') => {
-            Color::from_str(&hex[1..]).context_ut("failed to parse color")
-        }
-        _ => bail!("invalid color: {fill}"),
     }
 }
 
@@ -639,34 +559,6 @@ fn extra_compile_for_export<D: typst::Document + Send + Sync + 'static>(
         Err(e) if e.is_empty() => bail!("failed to compile: internal error"),
         Err(e) => bail!("failed to compile: {}", e[0].message),
     }
-}
-
-/// Serialize data to the output format.
-fn serialize(data: &impl serde::Serialize, format: &str, pretty: bool) -> Result<String> {
-    Ok(match format {
-        "json" if pretty => serde_json::to_string_pretty(data).context("serialize to json")?,
-        "json" => serde_json::to_string(data).context("serialize to json")?,
-        "yaml" => serde_yaml::to_string(&data).context_ut("serialize to yaml")?,
-        "txt" => {
-            use serde_json::Value::*;
-            let value = serde_json::to_value(data).context("serialize to json value")?;
-            match value {
-                String(s) => s,
-                _ => {
-                    let kind = match value {
-                        Null => "null",
-                        Bool(_) => "boolean",
-                        Number(_) => "number",
-                        String(_) => "string",
-                        Array(_) => "array",
-                        Object(_) => "object",
-                    };
-                    bail!("expected a string value for format: {format}, got {kind}")
-                }
-            }
-        }
-        _ => bail!("unsupported format for query: {format}"),
-    })
 }
 
 type FoldFuture = Pin<Box<dyn Future<Output = Option<()>> + Send>>;
@@ -752,28 +644,6 @@ mod tests {
         let conf = ExportUserConfig::default();
         assert!(!conf.count_words);
         assert_eq!(conf.task.when(), Some(&TaskWhen::Never));
-    }
-
-    #[test]
-    fn test_parse_color() {
-        assert_eq!(parse_color("black".to_owned()).unwrap(), Color::BLACK);
-        assert_eq!(parse_color("white".to_owned()).unwrap(), Color::WHITE);
-        assert_eq!(parse_color("red".to_owned()).unwrap(), Color::RED);
-        assert_eq!(parse_color("green".to_owned()).unwrap(), Color::GREEN);
-        assert_eq!(parse_color("blue".to_owned()).unwrap(), Color::BLUE);
-        assert_eq!(
-            parse_color("#000000".to_owned()).unwrap().to_hex(),
-            "#000000"
-        );
-        assert_eq!(
-            parse_color("#ffffff".to_owned()).unwrap().to_hex(),
-            "#ffffff"
-        );
-        assert_eq!(
-            parse_color("#000000cc".to_owned()).unwrap().to_hex(),
-            "#000000cc"
-        );
-        assert!(parse_color("invalid".to_owned()).is_err());
     }
 
     #[test]

@@ -146,8 +146,8 @@ mod polymorphic {
         pub task: ProjectTask,
         /// Whether to open the exported file(s) after the export is done.
         pub open: bool,
-        /// Whether to export to memory instead of writing to file.
-        pub in_memory: bool,
+        /// Whether to write to file.
+        pub write: bool,
     }
 
     /// The response to an export request.

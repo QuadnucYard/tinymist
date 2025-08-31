@@ -18,7 +18,7 @@ use tinymist_query::analysis::{Modifier, TokenType};
 use tinymist_query::{url_to_path, CompletionFeat, PositionEncoding};
 use tinymist_render::PeriscopeArgs;
 use tinymist_std::error::prelude::*;
-use tinymist_task::ExportTarget;
+use tinymist_task::{ExportTarget, Pages};
 use typst::foundations::IntoValue;
 use typst::Features;
 use typst_shim::utils::LazyHash;
@@ -560,6 +560,7 @@ impl Config {
             // },
             task: ProjectTask::ExportPdf(ExportPdfTask {
                 export,
+                pages: None, // todo: set pages
                 pdf_standards: self.pdf_standards().unwrap_or_default(),
                 creation_timestamp: self.creation_timestamp(),
             }),

@@ -190,42 +190,11 @@ impl ExportTask {
     }
 }
 
-/// The legacy page selection specifier.
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PageSelection {
-    /// Selects the first page.
-    #[default]
-    First,
-    /// Merges all pages into a single page.
-    Merged {
-        /// The gap between pages (in pt).
-        gap: Option<String>,
-    },
-    /// Selects a range of pages using the pattern format (e.g., "1-3", "4", "5-", "-2").
-    Range(String),
-}
-
-impl PageSelection {
-    /// Creates a page selection from a range pattern string.
-    ///
-    /// # Examples
-    /// ```
-    /// use tinymist_task::PageSelection;
-    ///
-    /// let first_page = PageSelection::from_range("1");
-    /// let page_range = PageSelection::from_range("1-3");
-    /// let from_page_5 = PageSelection::from_range("5-");
-    /// let up_to_page_2 = PageSelection::from_range("-2");
-    /// ```
-    pub fn from_range(pattern: impl Into<String>) -> Self {
-        PageSelection::Range(pattern.into())
-    }
-
-    /// Creates a merged page selection with an optional gap.
-    pub fn merged(gap: Option<String>) -> Self {
-        PageSelection::Merged { gap }
-    }
+/// A page merge specifier.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PageMerge {
+    /// The gap between pages (in pt).
+    pub gap: Option<String>,
 }
 
 /// A project export transform specifier.
@@ -266,6 +235,9 @@ pub struct ExportPdfTask {
     /// The shared export arguments.
     #[serde(flatten)]
     pub export: ExportTask,
+    /// Which pages to export. When unspecified, all pages are exported.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub pages: Option<Vec<Pages>>,
     /// One (or multiple comma-separated) PDF standards that Typst will enforce
     /// conformance with.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -284,6 +256,12 @@ pub struct ExportPngTask {
     /// The shared export arguments.
     #[serde(flatten)]
     pub export: ExportTask,
+    /// Which pages to export. When unspecified, all pages are exported.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub pages: Option<Vec<Pages>>,
+    /// The page merge specifier.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub merge: Option<PageMerge>,
     /// The PPI (pixels per inch) to use for PNG export.
     pub ppi: Scalar,
     /// The expression constructing background fill color (in typst script).
@@ -302,6 +280,12 @@ pub struct ExportSvgTask {
     /// The shared export arguments.
     #[serde(flatten)]
     pub export: ExportTask,
+    /// Which pages to export. When unspecified, all pages are exported.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub pages: Option<Vec<Pages>>,
+    /// The page merge specifier.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub merge: Option<PageMerge>,
 }
 
 /// An export html task specifier.
@@ -366,70 +350,4 @@ pub struct QueryTask {
     pub field: Option<String>,
     /// Expects and retrieves exactly one element.
     pub one: bool,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_page_selection_serialization() {
-        // Test First variant
-        let first = PageSelection::First;
-        let json = serde_json::to_string(&first).unwrap();
-        assert_eq!(json, r#""first""#);
-
-        // Test Merged variant
-        let merged = PageSelection::Merged {
-            gap: Some("1pt".to_string()),
-        };
-        let json = serde_json::to_string(&merged).unwrap();
-        assert!(json.contains("merged"));
-        assert!(json.contains("1pt"));
-
-        // Test Range variant
-        let range = PageSelection::Range("1-3".to_string());
-        let json = serde_json::to_string(&range).unwrap();
-        assert!(json.contains("range"));
-        assert!(json.contains("1-3"));
-    }
-
-    #[test]
-    fn test_page_selection_deserialization() {
-        // Test First variant
-        let json = r#""first""#;
-        let parsed: PageSelection = serde_json::from_str(json).unwrap();
-        matches!(parsed, PageSelection::First);
-
-        // Test Range variant
-        let json = r#"{"range": "1-5"}"#;
-        let parsed: PageSelection = serde_json::from_str(json).unwrap();
-        assert_eq!(parsed, PageSelection::Range("1-5".into()));
-    }
-
-    #[test]
-    fn test_page_selection_convenience_methods() {
-        // Test from_range method
-        let range1 = PageSelection::from_range("1");
-        if let PageSelection::Range(pattern) = range1 {
-            assert_eq!(pattern, "1");
-        } else {
-            panic!("Expected Range variant");
-        }
-
-        let range2 = PageSelection::from_range("1-3");
-        if let PageSelection::Range(pattern) = range2 {
-            assert_eq!(pattern, "1-3");
-        } else {
-            panic!("Expected Range variant");
-        }
-
-        // Test merged method
-        let merged = PageSelection::merged(Some("2pt".to_string()));
-        if let PageSelection::Merged { gap } = merged {
-            assert_eq!(gap, Some("2pt".to_string()));
-        } else {
-            panic!("Expected Merged variant");
-        }
-    }
 }

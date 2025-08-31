@@ -12,12 +12,12 @@ use task::TraceParams;
 use tinymist_assets::TYPST_PREVIEW_HTML;
 use tinymist_project::{
     ExportHtmlTask, ExportPdfTask, ExportPngTask, ExportSvgTask, ExportTask, ExportTeXTask,
-    ExportTextTask, ExportTransform, PageSelection, Pages, ProjectTask, QueryTask,
+    ExportTextTask, ExportTransform, Pages, ProjectTask, QueryTask,
 };
 use tinymist_query::package::PackageInfo;
 use tinymist_query::{LocalContextGuard, LspRange};
 use tinymist_std::error::prelude::*;
-use tinymist_task::ExportMarkdownTask;
+use tinymist_task::{ExportMarkdownTask, PageMerge};
 use typst::diag::{eco_format, StrResult};
 use typst::syntax::{LinkedNode, Source};
 use world::TaskInputs;
@@ -34,32 +34,60 @@ use typst::syntax::package::{PackageSpec, VersionlessPackageSpec};
 #[cfg(feature = "system")]
 use crate::tool::package::InitTask;
 
-/// See [`ProjectTask`].
+/// Basic export options with no additional fields.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ExportOpts {
-    fill: Option<String>,
-    ppi: Option<f32>,
-    #[serde(default)]
-    page: PageSelection,
     /// Whether to open the exported file(s) after the export is done.
     open: Option<bool>,
-    // todo: we made a mistake that they will be snakecase, but they should be camelCase
+}
+
+/// See [`ProjectTask`].
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportPdfOpts {
+    /// Which pages to export. When unspecified, all pages are exported.
+    pages: Option<Vec<Pages>>,
     /// The creation timestamp for various outputs (in seconds).
     creation_timestamp: Option<String>,
     /// A PDF standard that Typst can enforce conformance with.
     pdf_standard: Option<Vec<PdfStandard>>,
+    /// Whether to open the exported file(s) after the export is done.
+    open: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportSvgOpts {
+    /// Which pages to export. When unspecified, all pages are exported.
+    pages: Option<Vec<Pages>>,
+    merge: Option<PageMerge>,
+    /// Whether to open the exported file(s) after the export is done.
+    open: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportPngOpts {
+    /// Which pages to export. When unspecified, all pages are exported.
+    pages: Option<Vec<Pages>>,
+    merge: Option<PageMerge>,
+    fill: Option<String>,
+    ppi: Option<f32>,
+    /// Whether to open the exported file(s) after the export is done.
+    open: Option<bool>,
 }
 
 /// See [`ProjectTask`].
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExportTypliteOpts {
-    /// Whether to open the exported file(s) after the export is done.
-    open: Option<bool>,
     /// The processor to use for the typlite export.
     processor: Option<String>,
     /// The path of external assets directory.
     assets_path: Option<PathBuf>,
+    /// Whether to open the exported file(s) after the export is done.
+    open: Option<bool>,
 }
 
 /// See [`ProjectTask`].
@@ -87,7 +115,7 @@ struct ExportSyntaxRangeOpts {
 impl ServerState {
     /// Export the current document as PDF file(s).
     pub fn export_pdf(&mut self, mut args: Vec<JsonValue>) -> ScheduleResult {
-        let opts = get_arg_or_default!(args[1] as ExportOpts);
+        let opts = get_arg_or_default!(args[1] as ExportPdfOpts);
 
         let creation_timestamp = if let Some(value) = opts.creation_timestamp {
             Some(
@@ -103,6 +131,7 @@ impl ServerState {
         self.export(
             ProjectTask::ExportPdf(ExportPdfTask {
                 export,
+                pages: opts.pages,
                 pdf_standards: pdf_standards.unwrap_or_default(),
                 creation_timestamp,
             }),
@@ -190,13 +219,15 @@ impl ServerState {
 
     /// Export the current document as Svg file(s).
     pub fn export_svg(&mut self, mut args: Vec<JsonValue>) -> ScheduleResult {
-        let opts = get_arg_or_default!(args[1] as ExportOpts);
+        let opts = get_arg_or_default!(args[1] as ExportSvgOpts);
 
-        let mut export = self.config.export_task();
-        select_page(&mut export, opts.page).map_err(invalid_params)?;
-
+        let export = self.config.export_task();
         self.export(
-            ProjectTask::ExportSvg(ExportSvgTask { export }),
+            ProjectTask::ExportSvg(ExportSvgTask {
+                export,
+                pages: opts.pages,
+                merge: opts.merge,
+            }),
             opts.open.unwrap_or_default(),
             args,
         )
@@ -204,7 +235,7 @@ impl ServerState {
 
     /// Export the current document as Png file(s).
     pub fn export_png(&mut self, mut args: Vec<JsonValue>) -> ScheduleResult {
-        let opts = get_arg_or_default!(args[1] as ExportOpts);
+        let opts = get_arg_or_default!(args[1] as ExportPngOpts);
 
         let ppi = opts.ppi.unwrap_or(144.);
         let ppi = ppi
@@ -212,14 +243,14 @@ impl ServerState {
             .context("cannot convert ppi")
             .map_err(invalid_params)?;
 
-        let mut export = self.config.export_task();
-        select_page(&mut export, opts.page).map_err(invalid_params)?;
-
+        let export = self.config.export_task();
         self.export(
             ProjectTask::ExportPng(ExportPngTask {
+                export,
+                pages: opts.pages,
+                merge: opts.merge,
                 fill: opts.fill,
                 ppi,
-                export,
             }),
             opts.open.unwrap_or_default(),
             args,
@@ -235,9 +266,9 @@ impl ServerState {
         mut args: Vec<JsonValue>,
     ) -> ScheduleResult {
         let path = get_arg!(args[0] as PathBuf);
-        let in_memory = get_arg_or_default!(args[2] as bool);
+        let write = !get_arg_or_default!(args[2] as bool);
 
-        run_query!(self.OnExport(path, task, open, in_memory))
+        run_query!(self.OnExport(path, task, open, write))
     }
 
     /// Export a range of the current document as Ansi highlighted text.
@@ -790,259 +821,4 @@ impl ServerState {
             snap.run_analysis(f).map_err(internal_error)?
         })
     }
-}
-
-/// Applies page selection to the export task.
-fn select_page(task: &mut ExportTask, selection: PageSelection) -> Result<()> {
-    match selection {
-        PageSelection::First => task.transform.push(ExportTransform::Pages {
-            ranges: vec![Pages::FIRST],
-        }),
-        PageSelection::Merged { gap } => {
-            task.transform.push(ExportTransform::Merge { gap });
-        }
-        PageSelection::Range(pattern) => {
-            // Support comma-separated page ranges like "1-3,5,7-9"
-            let ranges: Result<Vec<_>, _> = pattern
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(|part| {
-                    part.parse::<Pages>()
-                        .map_err(|e| anyhow!("Invalid page range pattern '{}': {}", part, e))
-                })
-                .collect();
-
-            let ranges = ranges?;
-            if ranges.is_empty() {
-                return Err(anyhow!("Page range pattern cannot be empty").into());
-            }
-
-            task.transform.push(ExportTransform::Pages { ranges });
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tinymist_project::{ExportTask as ProjectExportTask, ExportTransform};
-    use tinymist_task::TaskWhen;
-
-    #[test]
-    fn test_select_page_first() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::First;
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 1);
-                assert_eq!(ranges[0], Pages::FIRST);
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    }
-
-    #[test]
-    fn test_select_page_merged() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::Merged {
-            gap: Some("1pt".to_string()),
-        };
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Merge { gap } => {
-                assert_eq!(gap, &Some("1pt".to_string()));
-            }
-            _ => panic!("Expected Merge transform"),
-        }
-    }
-    /*
-    #[test]
-    fn test_select_page_range_valid() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::Range {
-            pattern: "1-3".to_string(),
-        };
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 1);
-                // Verify the pattern was parsed correctly
-                assert_eq!(ranges[0].to_string(), "1-3");
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    } */
-
-    #[test]
-    fn test_select_page_range_single() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::Range("5".to_string());
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 1);
-                assert_eq!(ranges[0].to_string(), "5-5");
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    }
-
-    #[test]
-    fn test_select_page_range_open_end() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::from_range("3-");
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 1);
-                assert_eq!(ranges[0].to_string(), "3-");
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    }
-
-    #[test]
-    fn test_select_page_range_invalid() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::from_range("invalid");
-
-        let result = select_page(&mut task, selection);
-        assert!(result.is_err());
-
-        // Task should not be modified on error
-        assert_eq!(task.transform.len(), 0);
-    }
-
-    #[test]
-    fn test_select_page_range_comma_separated() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::from_range("1-3,5,7-9");
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 3);
-                assert_eq!(ranges[0].to_string(), "1-3");
-                assert_eq!(ranges[1].to_string(), "5-5");
-                assert_eq!(ranges[2].to_string(), "7-9");
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    }
-
-    #[test]
-    fn test_select_page_range_comma_separated_with_spaces() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::from_range(" 1-2 , 4 , 6- ");
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 3);
-                assert_eq!(ranges[0].to_string(), "1-2");
-                assert_eq!(ranges[1].to_string(), "4-4");
-                assert_eq!(ranges[2].to_string(), "6-");
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    }
-
-    #[test]
-    fn test_select_page_range_comma_separated_mixed() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::from_range("1,3-5,-2,8-");
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 4);
-                assert_eq!(ranges[0].to_string(), "1-1");
-                assert_eq!(ranges[1].to_string(), "3-5");
-                assert_eq!(ranges[2].to_string(), "-2");
-                assert_eq!(ranges[3].to_string(), "8-");
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    }
-    /*
-    #[test]
-    fn test_select_page_range_comma_separated_empty() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::Range {
-            pattern: "".to_string(),
-        };
-
-        let result = select_page(&mut task, selection);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Page range pattern cannot be empty"));
-
-        // Task should not be modified on error
-        assert_eq!(task.transform.len(), 0);
-    }
-
-    #[test]
-    fn test_select_page_range_comma_separated_with_empty_parts() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::Range {
-            pattern: "1,,3".to_string(),
-        };
-
-        select_page(&mut task, selection).unwrap();
-
-        assert_eq!(task.transform.len(), 1);
-        match &task.transform[0] {
-            ExportTransform::Pages { ranges } => {
-                assert_eq!(ranges.len(), 2);
-                assert_eq!(ranges[0].to_string(), "1-1");
-                assert_eq!(ranges[1].to_string(), "3-3");
-            }
-            _ => panic!("Expected Pages transform"),
-        }
-    }
-
-    #[test]
-    fn test_select_page_range_comma_separated_invalid_part() {
-        let mut task = ProjectExportTask::new(TaskWhen::OnSave);
-        let selection = PageSelection::Range {
-            pattern: "1-3,invalid,5".to_string(),
-        };
-
-        let result = select_page(&mut task, selection);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid page range pattern 'invalid'"));
-
-        // Task should not be modified on error
-        assert_eq!(task.transform.len(), 0);
-    } */
 }
