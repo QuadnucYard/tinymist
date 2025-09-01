@@ -18,7 +18,7 @@ use tinymist_query::analysis::{Modifier, TokenType};
 use tinymist_query::{url_to_path, CompletionFeat, PositionEncoding};
 use tinymist_render::PeriscopeArgs;
 use tinymist_std::error::prelude::*;
-use tinymist_task::{ExportTarget, Pages};
+use tinymist_task::ExportTarget;
 use typst::foundations::IntoValue;
 use typst::Features;
 use typst_shim::utils::LazyHash;

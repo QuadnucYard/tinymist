@@ -1,7 +1,8 @@
+/** biome-ignore-all lint/complexity/useLiteralKeys: special keys */
 import * as vscode from "vscode";
 import { tinymist } from "../lsp";
-import { VirtualConsole } from "../util";
 import { extensionState } from "../state";
+import { VirtualConsole } from "../util";
 
 type ExportFormat = "pdf" | "png" | "svg" | "html" | "markdown" | "text" | "query" | "pdfpc";
 
@@ -10,11 +11,10 @@ interface ExportArgs {
   inputPath: string;
   outputPath: string;
 
-  "pdf.creationTimestamp"?: string | null;
-  "png.ppi"?: number;
-
-  fill?: string;
-  "png.fill"?: string;
+  pages?: string | string[]; // Array of page ranges like ["1-3", "5", "7-9"], or comma separated ranges
+  "pdf.pages"?: string | string[];
+  "png.pages"?: string | string[];
+  "svg.pages"?: string | string[];
 
   merged?: boolean;
   "svg.merged"?: boolean;
@@ -24,11 +24,18 @@ interface ExportArgs {
   "png.merged.gap"?: string;
   "svg.merged.gap"?: string;
 
-  "query.format"?: string;
+  "pdf.creationTimestamp"?: string | null;
+
+  "png.ppi"?: number;
+
+  fill?: string;
+  "png.fill"?: string;
+
+  "query.format": string;
   "query.outputExtension"?: string;
   "query.strict"?: boolean;
   "query.pretty"?: boolean;
-  "query.selector"?: string;
+  "query.selector": string;
   "query.field"?: string;
   "query.one"?: boolean;
 
@@ -39,6 +46,58 @@ interface ExportArgs {
   "markdown.assetsPath"?: string;
   "tex.assetsPath"?: string;
 }
+
+export interface ExportPdfOpts {
+  pages?: string[];
+  creationTimestamp?: string | null;
+  // todo: pdf_standard
+}
+
+export interface PageMergeOpts {
+  gap?: string | null;
+}
+
+export interface ExportPngOpts {
+  pages?: string[];
+  merge?: PageMergeOpts;
+  fill?: string;
+  ppi?: number;
+}
+
+export interface ExportSvgOpts {
+  pages?: string[];
+  merge?: PageMergeOpts;
+}
+
+export interface ExportTypliteOpts {
+  processor?: string;
+  assetsPath?: string;
+}
+
+export interface ExportQueryOpts {
+  format: string;
+  outputExtension?: string;
+  strict?: boolean;
+  pretty?: boolean;
+  selector: string;
+  field?: string;
+  one?: boolean;
+}
+
+// biome-ignore lint/suspicious/noEmptyInterface: no fields yet
+export interface ExportHtmlOpts {}
+
+// biome-ignore lint/suspicious/noEmptyInterface: no fields yet
+export interface ExportTextOpts {}
+
+export type ExportOpts =
+  | ExportPdfOpts
+  | ExportPngOpts
+  | ExportSvgOpts
+  | ExportTypliteOpts
+  | ExportQueryOpts
+  | ExportHtmlOpts
+  | ExportTextOpts;
 
 export const runExport = (def: vscode.TaskDefinition) => {
   const exportArgs: ExportArgs = def?.export || {};
@@ -59,7 +118,7 @@ export const runExport = (def: vscode.TaskDefinition) => {
 
     try {
       await run();
-    } catch (e: any) {
+    } catch (e) {
       vc.writeln(`Typst export task failed: ${err(e)}`);
     } finally {
       closeEmitter.fire(0);
@@ -92,20 +151,20 @@ export const runExport = (def: vscode.TaskDefinition) => {
 };
 
 const exportOps = (exportArgs: ExportArgs) => ({
-  inheritedProp(prop: "merged" | "merged.gap", from: "svg" | "png"): any {
-    return exportArgs[`${from}.${prop}`] === undefined
-      ? exportArgs[prop]
-      : exportArgs[`${from}.${prop}`];
+  inheritedProp<P extends keyof ExportArgs>(prop: P, from: ExportFormat): ExportArgs[P] {
+    const key = `${from}.${prop}` as keyof ExportArgs;
+    return exportArgs[key] === undefined ? exportArgs[prop] : (exportArgs[key] as ExportArgs[P]);
   },
-  resolvePageOpts(fmt: "svg" | "png"): any {
+  resolvePagesOpts(fmt: "pdf" | "png" | "svg") {
+    const pages = this.inheritedProp("pages", fmt);
+    return typeof pages === "string" ? pages.split(",") : pages;
+  },
+  resolveMergeOpts(fmt: "png" | "svg") {
     if (this.inheritedProp("merged", fmt)) {
       return {
-        merged: {
-          gap: this.inheritedProp("merged.gap", fmt),
-        },
+        gap: this.inheritedProp("merged.gap", fmt),
       };
     }
-    return "first";
   },
   resolveInputPath() {
     const inputPath = exportArgs.inputPath;
@@ -119,63 +178,66 @@ const exportOps = (exportArgs: ExportArgs) => ({
 
 const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => ({
   pdf: {
-    opts() {
+    opts(): ExportPdfOpts {
       return {
+        pages: ops.resolvePagesOpts("pdf"),
         creationTimestamp: exportArgs["pdf.creationTimestamp"],
       };
     },
     export: tinymist.exportPdf,
   },
   png: {
-    opts() {
+    opts(): ExportPngOpts {
       return {
-        ppi: exportArgs["png.ppi"] || 96,
-        fill: exportArgs["png.fill"] || exportArgs["fill"],
-        page: ops.resolvePageOpts("png"),
+        pages: ops.resolvePagesOpts("png"),
+        merge: ops.resolveMergeOpts("png"),
+        ppi: exportArgs["png.ppi"] ?? 96,
+        fill: exportArgs["png.fill"] ?? exportArgs["fill"],
       };
     },
     export: tinymist.exportPng,
   },
   svg: {
-    opts() {
+    opts(): ExportSvgOpts {
       return {
-        page: ops.resolvePageOpts("svg"),
+        pages: ops.resolvePagesOpts("svg"),
+        merge: ops.resolveMergeOpts("svg"),
       };
     },
     export: tinymist.exportSvg,
   },
   html: {
-    opts() {
+    opts(): ExportHtmlOpts {
       return {};
     },
     export: tinymist.exportHtml,
   },
   markdown: {
-    opts() {
+    opts(): ExportTypliteOpts {
       return {
-        processor: exportArgs["markdown.processor"] || exportArgs["processor"],
-        assetsPath: exportArgs["markdown.assetsPath"] || exportArgs["assetsPath"],
+        processor: exportArgs["markdown.processor"] ?? exportArgs["processor"],
+        assetsPath: exportArgs["markdown.assetsPath"] ?? exportArgs["assetsPath"],
       };
     },
     export: tinymist.exportMarkdown,
   },
   tex: {
-    opts() {
+    opts(): ExportTypliteOpts {
       return {
-        processor: exportArgs["tex.processor"] || exportArgs["processor"],
-        assetsPath: exportArgs["tex.assetsPath"] || exportArgs["assetsPath"],
+        processor: exportArgs["tex.processor"] ?? exportArgs["processor"],
+        assetsPath: exportArgs["tex.assetsPath"] ?? exportArgs["assetsPath"],
       };
     },
     export: tinymist.exportTeX,
   },
   text: {
-    opts() {
+    opts(): ExportTextOpts {
       return {};
     },
     export: tinymist.exportText,
   },
   query: {
-    opts() {
+    opts(): ExportQueryOpts {
       return {
         format: exportArgs["query.format"],
         outputExtension: exportArgs["query.outputExtension"],
@@ -189,7 +251,7 @@ const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => 
     export: tinymist.exportQuery,
   },
   pdfpc: {
-    opts() {
+    opts(): ExportQueryOpts {
       return {
         format: "json",
         pretty: exportArgs["query.pretty"],

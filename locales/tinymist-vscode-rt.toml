@@ -17,6 +17,9 @@ zh = "导出为 HTML"
 en = "Export as Markdown"
 zh = "导出为 Markdown"
 
+["Export as PDF with specified pages"]
+en = "Export as PDF with specified pages"
+
 ["Export as PDF"]
 en = "Export as PDF"
 zh = "导出为 PDF"
@@ -52,9 +55,15 @@ zh = "导出首页为单个 PNG"
 en = "Export the first page as a single SVG"
 zh = "导出首页为单个 SVG"
 
+["Export the specified pages as multiple PNGs"]
+en = "Export the specified pages as multiple PNGs"
+
 ["Hint: you can create and find local packages in the sidebar. See https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper for more information."]
 en = "Hint: you can create and find local packages in the sidebar. See https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper for more information."
 zh = "提示：您可以在侧边栏中创建和查找本地包。有关更多信息，请参见 https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper。"
+
+["PDF (Specific Pages)"]
+en = "PDF (Specific Pages)"
 
 ["PNG (First Page)"]
 en = "PNG (First Page)"
@@ -63,6 +72,9 @@ zh = "PNG (首页)"
 ["PNG (Merged)"]
 en = "PNG (Merged)"
 zh = "PNG (合并)"
+
+["PNG (Specific Pages)"]
+en = "PNG (Specific Pages)"
 
 ["PNG (Task)"]
 en = "PNG (Task)"

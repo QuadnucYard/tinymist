@@ -25,6 +25,7 @@ import {
 import { substVscodeVarsInConfig, TinymistConfig } from "./config";
 import { TinymistStatus, wordCountItemProcess } from "./ui-extends";
 import { previewProcessOutline } from "./features/preview";
+import type { ExportOpts } from "./features/tasks.export";
 import { wordPattern } from "./language";
 
 interface ResourceRoutes {
@@ -749,14 +750,37 @@ export class LanguageState {
 
 export const tinymist = new LanguageState();
 
-// Type definitions for export responses (untagged union)
+// Type definitions for export responses (matches Rust OnExportResponse)
 export type OnExportResponse =
-  | null
-  | string    // File path for single file export OR base64 for single memory export
-  | string[]; // File paths for multi-file export OR base64 strings for multi-page memory export
+  | string // Failed(String)
+  | { path?: string; data?: string } // Single { path: Option<PathBuf>, data: Option<String> }
+  | Array<{ page: number; path?: string; data?: string }>; // Multiple(Vec<PagedExportResponse>)
+
+// Utility functions to handle export responses
+export function extractBase64FromExportResponse(response: OnExportResponse): string | string[] | null {
+  if (!response) return null;
+
+  // Handle Failed case
+  if (typeof response === 'string') {
+    return null; // This is an error message
+  }
+
+  // Handle Single case
+  if (!Array.isArray(response) && 'data' in response) {
+    return response.data || null;
+  }
+
+  // Handle Multiple case
+  if (Array.isArray(response)) {
+    const base64Data = response.map(item => item.data).filter(data => data !== undefined) as string[];
+    return base64Data.length > 0 ? base64Data : null;
+  }
+
+  return null;
+}
 
 function exportCommand(command: string) {
-  return (uri: string, extraOpts?: Record<string, unknown>, inMemory?: boolean): Promise<OnExportResponse> => {
+  return (uri: string, extraOpts?: ExportOpts, inMemory?: boolean): Promise<OnExportResponse> => {
     return tinymist.executeCommand<OnExportResponse>(command, [uri, extraOpts ?? {} , inMemory ?? false]);
   };
 }
