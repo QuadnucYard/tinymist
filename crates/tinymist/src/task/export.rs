@@ -1,6 +1,5 @@
 //! The actor that handles various document export, like PDF and SVG export.
 
-use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, OnceLock};
 use std::{ops::DerefMut, pin::Pin};
@@ -21,7 +20,6 @@ use tinymist_task::{
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
 use typst::ecow::EcoString;
-use typst::visualize::Color;
 
 use futures::Future;
 use parking_lot::Mutex;
@@ -408,7 +406,9 @@ impl ExportTask {
             Ok(match kind2 {
                 Preview(..) => Bytes::new([]).into(),
                 // todo: more pdf flags
-                ExportPdf(config) =>PdfExport::run(&graph, paged_doc()?, &config)?.into(),
+                ExportPdf(config) => PdfExport::run(&graph, paged_doc()?, &config)?.into(),
+                ExportSvg(config) => SvgExport::run(&graph, paged_doc()?, &config)?.into(),
+                ExportPng(config) => PngExport::run(&graph, paged_doc()?,& config)?.into(),
                 Query(config) => DocumentQuery::run(&graph, paged_doc()?, &config)??.into(),
                 ExportHtml(ExportHtmlTask { export: _ }) =>
                     typst_html::html(html_doc()?)
@@ -450,10 +450,7 @@ impl ExportTask {
                         .convert()
                         .map_err(|e| anyhow::anyhow!("failed to convert to latex: {e}"))?;
                     conv.into()
-                }
-                ExportSvg(config) => SvgExport::run(&graph, paged_doc()?, &config)?.into(),
-                ExportPng(config) => PngExport::run(&graph, paged_doc()?,& config)?.into(),
-            })
+                }})
         })
         .await??;
 
