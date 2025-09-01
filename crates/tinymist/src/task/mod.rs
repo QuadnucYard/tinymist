@@ -5,8 +5,6 @@
 #[cfg(feature = "export")]
 mod export;
 #[cfg(feature = "export")]
-mod export_image;
-#[cfg(feature = "export")]
 pub use export::*;
 #[cfg(feature = "export")]
 pub mod export2;

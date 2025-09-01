@@ -154,15 +154,19 @@ mod polymorphic {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(untagged)]
     pub enum OnExportResponse {
-        None,
-        /// Export to file - returns the file path if successful.
-        File(PathBuf),
-        /// Export to file - returns the file path if successful.
-        FileList(Vec<PathBuf>),
-        /// Export to memory - returns base64-encoded binary data.
-        Memory(String),
+        Failed(String),
+        Single {
+            path: Option<PathBuf>,
+            data: Option<String>,
+        },
+        Multiple(Vec<PagedExportResponse>),
+    }
 
-        MemoryList(Vec<String>),
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PagedExportResponse {
+        pub page: usize,
+        pub path: Option<PathBuf>,
+        pub data: Option<String>,
     }
 
     /// A request to format the document.
@@ -350,7 +354,7 @@ mod polymorphic {
     #[serde(untagged)]
     pub enum CompilerQueryResponse {
         /// The response to the on export request.
-        OnExport(OnExportResponse),
+        OnExport(Option<OnExportResponse>),
         /// The response to the hover request.
         Hover(Option<Hover>),
         /// The response to the goto definition request.

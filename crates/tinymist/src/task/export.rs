@@ -1,5 +1,6 @@
 //! The actor that handles various document export, like PDF and SVG export.
 
+use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, OnceLock};
 use std::{ops::DerefMut, pin::Pin};
@@ -8,14 +9,14 @@ use reflexo::ImmutPath;
 use reflexo_typst::{Bytes, CompilationTask, ExportComputation};
 use sync_ls::{internal_error, just_future};
 use tinymist_project::LspWorld;
-use tinymist_query::{OnExportRequest, OnExportResponse};
+use tinymist_query::{OnExportRequest, OnExportResponse, PagedExportResponse};
 use tinymist_std::error::prelude::*;
 use tinymist_std::fs::paths::write_atomic;
 use tinymist_std::path::PathClean;
 use tinymist_std::typst::TypstDocument;
 use tinymist_task::{
-    DocumentQuery, ExportMarkdownTask, ExportTarget, ImageOutput, PdfExport, PngExport, SvgExport,
-    TextExport,
+    output_template, DocumentQuery, ExportMarkdownTask, ExportTarget, ImageOutput, PdfExport,
+    PngExport, SvgExport, TextExport,
 };
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
@@ -77,16 +78,18 @@ impl ServerState {
             // todo: we may get some file missing errors here
             let artifact = CompiledArtifact::from_graph(snap.clone(), is_html);
 
-            let res = if !write {
-                // Export to memory and return base64-encoded data
-                ExportTask::do_export_to_memory(task, artifact)
-                    .await
-                    .map_err(internal_error)?
-            } else {
+            let res = if write {
                 // Export to file and return path
                 ExportTask::do_export(task, artifact, lock_dir)
                     .await
                     .map_err(internal_error)?
+            } else {
+                // Export to memory and return base64-encoded data
+                Some(
+                    ExportTask::do_export_to_memory(task, artifact)
+                        .await
+                        .map_err(internal_error)?,
+                )
             };
 
             if let Some(update_dep) = update_dep {
@@ -110,7 +113,13 @@ impl ServerState {
                 }
 
                 // Only open for file exports
-                if let (true, OnExportResponse::File(ref path)) = (open, &res) {
+                if let (
+                    true,
+                    Some(OnExportResponse::Single {
+                        path: Some(path), ..
+                    }),
+                ) = (open, &res)
+                {
                     log::trace!("open with system default apps: {path:?}");
                     do_open(path).log_error("failed to open with system default apps");
                 }
@@ -264,41 +273,12 @@ impl ExportTask {
         Some(())
     }
 
-    /// Exports a document to memory, returning the binary data directly.
-    pub async fn do_export_to_memory(
-        task: ProjectTask,
-        artifact: LspCompiledArtifact,
-    ) -> Result<OnExportResponse> {
-        use base64::prelude::*;
-
-        let data = Self::do_export_common(task, artifact, 0).await?;
-        Ok(match data {
-            ExportArtifact::Single(bytes) => {
-                OnExportResponse::Memory(BASE64_STANDARD.encode(bytes.as_slice()))
-            }
-            ExportArtifact::Paged(items) => OnExportResponse::MemoryList(
-                items
-                    .into_iter()
-                    .map(|(_, b)| BASE64_STANDARD.encode(b.as_slice()))
-                    .collect(),
-            ),
-        })
-    }
-
-    /// Exports a document.
-    pub async fn do_export(
-        task: ProjectTask,
-        artifact: LspCompiledArtifact,
-        lock_dir: Option<ImmutPath>,
-    ) -> Result<OnExportResponse> {
-        let CompiledArtifact { graph, .. } = &artifact;
-
-        // Prepare the output path.
+    fn prepare_output_path(task: &ProjectTask, graph: &LspComputeGraph) -> Result<Option<PathBuf>> {
         let entry = graph.snap.world.entry_state();
         let config = task.as_export().unwrap();
         let output = config.output.clone().unwrap_or_default();
         let Some(write_to) = output.substitute(&entry) else {
-            return Ok(OnExportResponse::None);
+            return Ok(None);
         };
         let write_to = if write_to.is_relative() {
             let cwd = std::env::current_dir().context("failed to get current directory")?;
@@ -314,11 +294,84 @@ impl ExportTask {
         }
         let write_to = write_to.with_extension(task.extension());
 
+        Ok(Some(write_to))
+    }
+
+    /// Exports a document to memory, returning the binary data directly.
+    pub async fn do_export_to_memory(
+        task: ProjectTask,
+        artifact: LspCompiledArtifact,
+    ) -> Result<OnExportResponse> {
+        use base64::prelude::*;
+
+        let CompiledArtifact { graph, .. } = &artifact;
+
+        let write_to = match Self::prepare_output_path(&task, graph) {
+            Ok(write_to) => write_to,
+            Err(err) => return Ok(OnExportResponse::Failed(err.to_string())),
+        };
+
+        let artifact = Self::do_export_bytes(task, artifact, 0).await?;
+
+        let res = match artifact {
+            ExportArtifact::Single(data) => OnExportResponse::Single {
+                path: write_to.clone(),
+                data: Some(BASE64_STANDARD.encode(data.as_slice())),
+            },
+            ExportArtifact::Paged { total_pages, items } => {
+                let can_handle_multiple = write_to.as_ref().is_some_and(|write_to| {
+                    output_template::has_indexable_template(write_to.to_str().unwrap_or_default())
+                });
+
+                OnExportResponse::Multiple(
+                    items
+                        .into_iter()
+                        .map(|(page_idx, bytes)| {
+                            let to = write_to.as_ref().map(|write_to| {
+                                if can_handle_multiple {
+                                    let storage = output_template::format(
+                                        write_to.to_str().unwrap_or_default(),
+                                        page_idx + 1,
+                                        total_pages,
+                                    );
+                                    PathBuf::from(storage)
+                                } else {
+                                    write_to.clone()
+                                }
+                            });
+
+                            PagedExportResponse {
+                                page: page_idx,
+                                path: to,
+                                data: Some(BASE64_STANDARD.encode(bytes.as_slice())),
+                            }
+                        })
+                        .collect(),
+                )
+            }
+        };
+
+        Ok(res)
+    }
+
+    /// Exports a document.
+    pub async fn do_export(
+        task: ProjectTask,
+        artifact: LspCompiledArtifact,
+        lock_dir: Option<ImmutPath>,
+    ) -> Result<Option<OnExportResponse>> {
+        let CompiledArtifact { graph, .. } = &artifact;
+
+        let Some(write_to) = Self::prepare_output_path(&task, graph)? else {
+            return Ok(None);
+        };
+
         static EXPORT_ID: AtomicUsize = AtomicUsize::new(0);
         let export_id = EXPORT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         log::debug!(
-            "ExportTask({export_id},lock={lock_dir:?}): exporting {entry:?} to {write_to:?}"
+            "ExportTask({export_id},lock={lock_dir:?}): exporting {entry:?} to {write_to:?}",
+            entry = graph.snap.world.entry_state()
         );
         if let Some(e) = write_to.parent() {
             if !e.exists() {
@@ -345,20 +398,69 @@ impl ExportTask {
         });
 
         // Generate the data using common logic
-        let data = Self::do_export_common(task.clone(), artifact, export_id).await?;
+        let artifact = Self::do_export_bytes(task.clone(), artifact, export_id).await?;
 
-        // todo
-        // let to = write_to.clone();
-        // tokio::task::spawn_blocking(move || write_atomic(to, data))
-        //     .await
-        //     .context_ut("failed to export")??;
+        let res = match artifact {
+            ExportArtifact::Single(data) => {
+                let res = OnExportResponse::Single {
+                    path: Some(write_to.clone()),
+                    data: None,
+                };
+
+                let to = write_to.clone();
+                tokio::task::spawn_blocking(move || write_atomic(to, data))
+                    .await
+                    .context_ut("failed to export")??;
+
+                res
+            }
+            ExportArtifact::Paged { total_pages, items } => {
+                let can_handle_multiple =
+                    output_template::has_indexable_template(write_to.to_str().unwrap_or_default());
+
+                if !can_handle_multiple && items.len() > 1 {
+                    bail!("cannot export multiple images without a page number template ({{p}}, {{0p}}) in the output path");
+                }
+
+                let mut res_items = Vec::new();
+                let mut write_futures = Vec::new();
+                for (page_idx, bytes) in items {
+                    let to = if can_handle_multiple {
+                        let storage = output_template::format(
+                            write_to.to_str().unwrap_or_default(),
+                            page_idx + 1,
+                            total_pages,
+                        );
+                        PathBuf::from(storage)
+                    } else {
+                        write_to.clone()
+                    };
+
+                    res_items.push(PagedExportResponse {
+                        page: page_idx,
+                        path: Some(to.clone()),
+                        data: None,
+                    });
+
+                    let fut = tokio::task::spawn_blocking(move || write_atomic(to, bytes));
+                    write_futures.push(fut);
+                }
+
+                // Await all writes in parallel
+                for result in futures::future::join_all(write_futures).await {
+                    result.context_ut("failed to export")??;
+                }
+
+                OnExportResponse::Multiple(res_items)
+            }
+        };
 
         log::debug!("ExportTask({export_id}): export complete");
-        Ok(OnExportResponse::File(write_to))
+        Ok(Some(res))
     }
 
-    /// Common export logic that generates the binary data without handling output.
-    async fn do_export_common(
+    /// Export a document into bytes.
+    async fn do_export_bytes(
         task: ProjectTask,
         artifact: LspCompiledArtifact,
         export_id: usize,
@@ -402,13 +504,14 @@ impl ExportTask {
                     .as_ref()
                     .map_err(|e| e.clone())
             };
+            let total_pages = || paged_doc().map(|d| d.pages.len()).unwrap_or_default();
 
             Ok(match kind2 {
                 Preview(..) => Bytes::new([]).into(),
                 // todo: more pdf flags
                 ExportPdf(config) => PdfExport::run(&graph, paged_doc()?, &config)?.into(),
-                ExportSvg(config) => SvgExport::run(&graph, paged_doc()?, &config)?.into(),
-                ExportPng(config) => PngExport::run(&graph, paged_doc()?,& config)?.into(),
+                ExportSvg(config) => SvgExport::run(&graph, paged_doc()?, &config)?.with_pages(total_pages()),
+                ExportPng(config) => PngExport::run(&graph, paged_doc()?,& config)?.with_pages(total_pages()),
                 Query(config) => DocumentQuery::run(&graph, paged_doc()?, &config)??.into(),
                 ExportHtml(ExportHtmlTask { export: _ }) =>
                     typst_html::html(html_doc()?)
@@ -460,7 +563,10 @@ impl ExportTask {
 
 enum ExportArtifact {
     Single(Bytes),
-    Paged(Vec<(usize, Bytes)>),
+    Paged {
+        total_pages: usize,
+        items: Vec<(usize, Bytes)>,
+    },
 }
 
 impl From<Bytes> for ExportArtifact {
@@ -481,26 +587,33 @@ impl From<EcoString> for ExportArtifact {
     }
 }
 
-impl From<ImageOutput<Bytes>> for ExportArtifact {
-    fn from(value: ImageOutput<Bytes>) -> Self {
-        match value {
+trait WithPages {
+    fn with_pages(self, total_pages: usize) -> ExportArtifact;
+}
+
+impl WithPages for ImageOutput<Bytes> {
+    fn with_pages(self, total_pages: usize) -> ExportArtifact {
+        match self {
             ImageOutput::Merged(b) => ExportArtifact::Single(b),
-            ImageOutput::Paged(v) => {
-                ExportArtifact::Paged(v.into_iter().map(|item| (item.page, item.value)).collect())
-            }
+            ImageOutput::Paged(v) => ExportArtifact::Paged {
+                total_pages,
+                items: v.into_iter().map(|item| (item.page, item.value)).collect(),
+            },
         }
     }
 }
 
-impl From<ImageOutput<String>> for ExportArtifact {
-    fn from(value: ImageOutput<String>) -> Self {
-        match value {
+impl WithPages for ImageOutput<String> {
+    fn with_pages(self, total_pages: usize) -> ExportArtifact {
+        match self {
             ImageOutput::Merged(b) => ExportArtifact::Single(Bytes::from_string(b)),
-            ImageOutput::Paged(v) => ExportArtifact::Paged(
-                v.into_iter()
+            ImageOutput::Paged(v) => ExportArtifact::Paged {
+                total_pages,
+                items: v
+                    .into_iter()
                     .map(|item| (item.page, Bytes::from_string(item.value)))
                     .collect(),
-            ),
+            },
         }
     }
 }
