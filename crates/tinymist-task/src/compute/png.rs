@@ -6,8 +6,6 @@ use tinymist_std::error::prelude::*;
 use tinymist_std::typst::TypstPagedDocument;
 use tinymist_world::{CompilerFeat, ExportComputation, WorldComputeGraph};
 use typst::foundations::Bytes;
-use typst::layout::{Abs, Page};
-use typst::visualize::Color;
 
 use crate::compute::{parse_color, parse_length, select_pages};
 use crate::model::ExportPngTask;

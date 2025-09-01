@@ -191,7 +191,8 @@ impl ExportTask {
 }
 
 /// A page merge specifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PageMerge {
     /// The gap between pages (in pt).
     pub gap: Option<String>,

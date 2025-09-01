@@ -16,6 +16,7 @@ use crate::lsp::query::run_query;
 
 /// Basic export options with no additional fields.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 #[serde(rename_all = "camelCase")]
 struct ExportOpts {
     /// Whether to open the exported file(s) after the export is done.
@@ -24,7 +25,7 @@ struct ExportOpts {
 
 /// See [`ProjectTask`].
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 struct ExportPdfOpts {
     /// Which pages to export. When unspecified, all pages are exported.
     pages: Option<Vec<Pages>>,
@@ -37,7 +38,7 @@ struct ExportPdfOpts {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 struct ExportSvgOpts {
     /// Which pages to export. When unspecified, all pages are exported.
     pages: Option<Vec<Pages>>,
@@ -47,7 +48,7 @@ struct ExportSvgOpts {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 struct ExportPngOpts {
     /// Which pages to export. When unspecified, all pages are exported.
     pages: Option<Vec<Pages>>,
@@ -60,7 +61,7 @@ struct ExportPngOpts {
 
 /// See [`ProjectTask`].
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 struct ExportTypliteOpts {
     /// The processor to use for the typlite export.
     processor: Option<String>,
@@ -72,7 +73,7 @@ struct ExportTypliteOpts {
 
 /// See [`ProjectTask`].
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 struct QueryOpts {
     format: String,
     output_extension: Option<String>,

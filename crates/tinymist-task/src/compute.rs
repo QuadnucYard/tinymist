@@ -7,11 +7,11 @@ use tinymist_std::error::prelude::*;
 use tinymist_std::typst::TypstPagedDocument;
 use tinymist_world::{CompileSnapshot, CompilerFeat, ExportComputation, WorldComputeGraph};
 use typst::foundations::Bytes;
-use typst::layout::{Abs, Page, PageRanges};
+use typst::layout::{Abs, Page};
 use typst::syntax::{SyntaxNode, ast};
 use typst::visualize::Color;
 
-use crate::{Pages, TaskWhen};
+use crate::{Pages, TaskWhen, exported_page_ranges};
 
 mod html;
 pub use html::*;
@@ -66,9 +66,7 @@ fn select_pages<'a>(
     document: &'a TypstPagedDocument,
     pages: &Option<Vec<Pages>>,
 ) -> Vec<(usize, &'a Page)> {
-    let pages = pages
-        .as_ref()
-        .map(|pages| PageRanges::new(pages.iter().map(|it| it.0.clone()).collect()));
+    let pages = pages.as_ref().map(|pages| exported_page_ranges(pages));
     document
         .pages
         .iter()
