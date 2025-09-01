@@ -321,7 +321,11 @@ impl ExportTask {
 
         let write_to = match Self::prepare_output_path(&task, graph) {
             Ok(write_to) => write_to,
-            Err(err) => return Ok(OnExportResponse::Failed(err.to_string())),
+            Err(err) => {
+                return Ok(OnExportResponse::Failed {
+                    message: err.to_string(),
+                })
+            }
         };
 
         let artifact = Self::do_export_bytes(task, artifact, 0).await?;

@@ -1,15 +1,15 @@
 import * as vscode from "vscode";
 import { commands } from "vscode";
-import type { IContext } from "../context";
-import { l10nMsg } from "../l10n";
-import { type OnExportResponse, tinymist } from "../lsp";
 import type {
   ExportOpts,
   ExportPdfOpts,
   ExportPngOpts,
   ExportSvgOpts,
   ExportTypliteOpts,
-} from "./tasks.export";
+} from "../cmd.export";
+import type { IContext } from "../context";
+import { l10nMsg } from "../l10n";
+import { type OnExportResponse, tinymist } from "../lsp";
 
 export type ExportKind = "Pdf" | "Html" | "Svg" | "Png" | "Markdown" | "TeX" | "Text" | "Query";
 
@@ -235,10 +235,7 @@ export async function commandShow(
 
   // only create pdf if it does not exist yet
   const exportResponse = await commandExport(kind, extraOpts);
-  if (
-    !exportResponse ||
-    !(typeof exportResponse === "object" && "path" in exportResponse && exportResponse.path)
-  ) {
+  if (!exportResponse || !("path" in exportResponse && exportResponse.path)) {
     // show error message
     await vscode.window.showErrorMessage(`Failed to export ${kind}`);
     return;

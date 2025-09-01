@@ -16,16 +16,15 @@ import { HoverDummyStorage } from "./features/hover-storage";
 import type { HoverTmpStorage } from "./features/hover-storage.tmp";
 import { extensionState } from "./state";
 import {
-  base64Encode,
   bytesBase64Encode,
   DisposeList,
   getSensibleTextEditorColumn,
   typstDocumentSelector,
 } from "./util";
+import type { ExportOpts } from "./cmd.export";
 import { substVscodeVarsInConfig, TinymistConfig } from "./config";
 import { TinymistStatus, wordCountItemProcess } from "./ui-extends";
 import { previewProcessOutline } from "./features/preview";
-import type { ExportOpts } from "./features/tasks.export";
 import { wordPattern } from "./language";
 
 interface ResourceRoutes {
@@ -752,36 +751,17 @@ export const tinymist = new LanguageState();
 
 // Type definitions for export responses (matches Rust OnExportResponse)
 export type OnExportResponse =
-  | string // Failed(String)
-  | { path?: string; data?: string } // Single { path: Option<PathBuf>, data: Option<String> }
-  | Array<{ page: number; path?: string; data?: string }>; // Multiple(Vec<PagedExportResponse>)
-
-// Utility functions to handle export responses
-export function extractBase64FromExportResponse(response: OnExportResponse): string | string[] | null {
-  if (!response) return null;
-
-  // Handle Failed case
-  if (typeof response === 'string') {
-    return null; // This is an error message
-  }
-
-  // Handle Single case
-  if (!Array.isArray(response) && 'data' in response) {
-    return response.data || null;
-  }
-
-  // Handle Multiple case
-  if (Array.isArray(response)) {
-    const base64Data = response.map(item => item.data).filter(data => data !== undefined) as string[];
-    return base64Data.length > 0 ? base64Data : null;
-  }
-
-  return null;
-}
+  | { message: string } // Failed { message: String }
+  | { path: string | null; data: string | null } // Single { path: Option<PathBuf>, data: Option<String> }
+  | Array<{ page: number; path: string | null; data: string | null }>; // Multiple(Vec<PagedExportResponse>)
 
 function exportCommand(command: string) {
   return (uri: string, extraOpts?: ExportOpts, inMemory?: boolean): Promise<OnExportResponse> => {
-    return tinymist.executeCommand<OnExportResponse>(command, [uri, extraOpts ?? {} , inMemory ?? false]);
+    return tinymist.executeCommand<OnExportResponse>(command, [
+      uri,
+      extraOpts ?? {},
+      inMemory ?? false,
+    ]);
   };
 }
 

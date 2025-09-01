@@ -154,7 +154,9 @@ mod polymorphic {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(untagged)]
     pub enum OnExportResponse {
-        Failed(String),
+        Failed {
+            message: String,
+        },
         Single {
             path: Option<PathBuf>,
             data: Option<String>,

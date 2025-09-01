@@ -1,12 +1,21 @@
 /** biome-ignore-all lint/complexity/useLiteralKeys: special keys */
 import * as vscode from "vscode";
+import type {
+  ExportHtmlOpts,
+  ExportPdfOpts,
+  ExportPngOpts,
+  ExportQueryOpts,
+  ExportSvgOpts,
+  ExportTextOpts,
+  ExportTypliteOpts,
+} from "../cmd.export";
 import { tinymist } from "../lsp";
 import { extensionState } from "../state";
 import { VirtualConsole } from "../util";
 
-type ExportFormat = "pdf" | "png" | "svg" | "html" | "markdown" | "text" | "query" | "pdfpc";
+export type ExportFormat = "pdf" | "png" | "svg" | "html" | "markdown" | "text" | "query" | "pdfpc";
 
-interface ExportArgs {
+export interface ExportArgs {
   format: ExportFormat | ExportFormat[];
   inputPath: string;
   outputPath: string;
@@ -50,60 +59,6 @@ interface ExportArgs {
   "markdown.assetsPath"?: string;
   "tex.assetsPath"?: string;
 }
-
-export interface ExportPdfOpts {
-  pages?: string[];
-  creationTimestamp?: string | null;
-  // todo: pdf_standard
-}
-
-export interface PageMergeOpts {
-  gap?: string | null;
-}
-
-export interface ExportPngOpts {
-  pages?: string[];
-  pageNumberTemplate?: string;
-  merge?: PageMergeOpts;
-  fill?: string;
-  ppi?: number;
-}
-
-export interface ExportSvgOpts {
-  pages?: string[];
-  pageNumberTemplate?: string;
-  merge?: PageMergeOpts;
-}
-
-export interface ExportTypliteOpts {
-  processor?: string;
-  assetsPath?: string;
-}
-
-export interface ExportQueryOpts {
-  format: string;
-  outputExtension?: string;
-  strict?: boolean;
-  pretty?: boolean;
-  selector: string;
-  field?: string;
-  one?: boolean;
-}
-
-// biome-ignore lint/suspicious/noEmptyInterface: no fields yet
-export interface ExportHtmlOpts {}
-
-// biome-ignore lint/suspicious/noEmptyInterface: no fields yet
-export interface ExportTextOpts {}
-
-export type ExportOpts =
-  | ExportPdfOpts
-  | ExportPngOpts
-  | ExportSvgOpts
-  | ExportTypliteOpts
-  | ExportQueryOpts
-  | ExportHtmlOpts
-  | ExportTextOpts;
 
 export const runExport = (def: vscode.TaskDefinition) => {
   const exportArgs: ExportArgs = def?.export || {};
@@ -156,7 +111,7 @@ export const runExport = (def: vscode.TaskDefinition) => {
   }
 };
 
-const exportOps = (exportArgs: ExportArgs) => ({
+export const exportOps = (exportArgs: ExportArgs) => ({
   inheritedProp<P extends keyof ExportArgs>(prop: P, from: ExportFormat): ExportArgs[P] {
     const key = `${from}.${prop}` as keyof ExportArgs;
     return exportArgs[key] === undefined ? exportArgs[prop] : (exportArgs[key] as ExportArgs[P]);
@@ -182,7 +137,7 @@ const exportOps = (exportArgs: ExportArgs) => ({
   },
 });
 
-const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => ({
+export const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => ({
   pdf: {
     opts(): ExportPdfOpts {
       return {
@@ -196,7 +151,8 @@ const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => 
     opts(): ExportPngOpts {
       return {
         pages: ops.resolvePagesOpts("png"),
-        pageNumberTemplate: exportArgs["png.pageNumberTemplate"] ?? exportArgs["pageNumberTemplate"],
+        pageNumberTemplate:
+          exportArgs["png.pageNumberTemplate"] ?? exportArgs["pageNumberTemplate"],
         merge: ops.resolveMergeOpts("png"),
         ppi: exportArgs["png.ppi"],
         fill: exportArgs["png.fill"] ?? exportArgs["fill"],
@@ -208,7 +164,8 @@ const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => 
     opts(): ExportSvgOpts {
       return {
         pages: ops.resolvePagesOpts("svg"),
-        pageNumberTemplate: exportArgs["svg.pageNumberTemplate"] ?? exportArgs["pageNumberTemplate"],
+        pageNumberTemplate:
+          exportArgs["svg.pageNumberTemplate"] ?? exportArgs["pageNumberTemplate"],
         merge: ops.resolveMergeOpts("svg"),
       };
     },
