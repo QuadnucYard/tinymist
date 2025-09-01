@@ -234,6 +234,7 @@ impl TaskCompileArgs {
             OutputFormat::Png => ProjectTask::ExportPng(ExportPngTask {
                 export,
                 pages: self.pages.clone(),
+                page_number_template: None,
                 merge: None,
                 ppi: self.png.ppi.try_into().unwrap(),
                 fill: None,
@@ -241,13 +242,10 @@ impl TaskCompileArgs {
             OutputFormat::Svg => ProjectTask::ExportSvg(ExportSvgTask {
                 export,
                 pages: self.pages.clone(),
+                page_number_template: None,
                 merge: None,
             }),
-            OutputFormat::Html => ProjectTask::ExportSvg(ExportSvgTask {
-                export,
-                pages: self.pages.clone(),
-                merge: None,
-            }),
+            OutputFormat::Html => ProjectTask::ExportHtml(ExportHtmlTask { export }),
         };
 
         Ok(ApplyProjectTask {

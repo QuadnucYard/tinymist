@@ -3,7 +3,13 @@ import { commands } from "vscode";
 import type { IContext } from "../context";
 import { l10nMsg } from "../l10n";
 import { type OnExportResponse, tinymist } from "../lsp";
-import type { ExportOpts, ExportTypliteOpts } from "./tasks.export";
+import type {
+  ExportOpts,
+  ExportPdfOpts,
+  ExportPngOpts,
+  ExportSvgOpts,
+  ExportTypliteOpts,
+} from "./tasks.export";
 
 export type ExportKind = "Pdf" | "Html" | "Svg" | "Png" | "Markdown" | "TeX" | "Text" | "Query";
 
@@ -103,6 +109,12 @@ export const quickExports: QuickExportFormatMeta[] = [
     description: l10nMsg("Export the first page as a single SVG"),
     exportKind: "Svg",
   },
+  {
+    label: l10nMsg("SVG (Specific Pages)"),
+    description: l10nMsg("Export the specified pages as multiple SVGs"),
+    exportKind: "Svg",
+    selectPages: true,
+  },
   // {
   //   label: l10nMsg("SVG (Task)"),
   //   description: l10nMsg("Export as SVG (and update tasks.json)"),
@@ -140,13 +152,27 @@ async function askAndRun<T>(
   if (picked.selectPages) {
     picked.extraOpts ??= {};
     const pages = await vscode.window.showInputBox({
-      title: "Pages to export",
-      placeHolder: 'e.g. "1-3,5,7-9", leave empty for all pages',
-      prompt: "Specify the pages you want to export",
+      title: l10nMsg("Pages to export"),
+      placeHolder: l10nMsg("e.g. `1-3,5,7-9`, leave empty for all pages"),
+      prompt: l10nMsg("Specify the pages you want to export"),
     });
 
     if (pages) {
-      (picked.extraOpts as { pages?: string[] }).pages = pages.split(",");
+      (picked.extraOpts as ExportPdfOpts | ExportPngOpts | ExportSvgOpts).pages = pages.split(",");
+    }
+
+    if (picked.exportKind === "Png" || picked.exportKind === "Svg") {
+      const pageNumberTemplate = await vscode.window.showInputBox({
+        title: "Page Number Template",
+        placeHolder: l10nMsg("e.g., `page-{0p}-of-{t}.png`"),
+        prompt: l10nMsg(
+          "a page number template must be present if the source document renders to multiple pages. Use `{p}` for page numbers, `{0p}` for zero padded page numbers and `{t}` for page count.",
+        ),
+      });
+
+      if (pageNumberTemplate) {
+        (picked.extraOpts as ExportPngOpts | ExportSvgOpts).pageNumberTemplate = pageNumberTemplate;
+      }
     }
   }
 

@@ -15,8 +15,8 @@ use tinymist_std::fs::paths::write_atomic;
 use tinymist_std::path::PathClean;
 use tinymist_std::typst::TypstDocument;
 use tinymist_task::{
-    output_template, DocumentQuery, ExportMarkdownTask, ExportTarget, ImageOutput, PdfExport,
-    PngExport, SvgExport, TextExport,
+    output_template, DocumentQuery, ExportMarkdownTask, ExportPngTask, ExportSvgTask, ExportTarget,
+    ImageOutput, PdfExport, PngExport, SvgExport, TextExport,
 };
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
@@ -292,6 +292,19 @@ impl ExportTask {
         if write_to.is_dir() {
             bail!("ExportTask({task:?}): output path is a directory: {write_to:?}");
         }
+
+        // Apply page template if any
+        let write_to = match task {
+            ProjectTask::ExportPng(ExportPngTask {
+                page_number_template: Some(page_number_template),
+                ..
+            })
+            | ProjectTask::ExportSvg(ExportSvgTask {
+                page_number_template: Some(page_number_template),
+                ..
+            }) => write_to.with_file_name(page_number_template),
+            _ => write_to,
+        };
         let write_to = write_to.with_extension(task.extension());
 
         Ok(Some(write_to))
@@ -474,7 +487,6 @@ impl ExportTask {
         let doc = doc.context("cannot export with compilation errors")?;
 
         // Prepare data.
-        let kind2 = task.clone();
         let data = FutureFolder::compute(move |_| -> Result<ExportArtifact> {
             let doc = &doc;
 
@@ -506,7 +518,7 @@ impl ExportTask {
             };
             let total_pages = || paged_doc().map(|d| d.pages.len()).unwrap_or_default();
 
-            Ok(match kind2 {
+            Ok(match task {
                 Preview(..) => Bytes::new([]).into(),
                 // todo: more pdf flags
                 ExportPdf(config) => PdfExport::run(&graph, paged_doc()?, &config)?.into(),

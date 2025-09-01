@@ -260,6 +260,9 @@ pub struct ExportPngTask {
     /// Which pages to export. When unspecified, all pages are exported.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub pages: Option<Vec<Pages>>,
+    /// The page template to use for multiple pages.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub page_number_template: Option<String>,
     /// The page merge specifier.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub merge: Option<PageMerge>,
@@ -281,6 +284,9 @@ pub struct ExportSvgTask {
     /// The shared export arguments.
     #[serde(flatten)]
     pub export: ExportTask,
+    /// The page template to use for multiple pages.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub page_number_template: Option<String>,
     /// Which pages to export. When unspecified, all pages are exported.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub pages: Option<Vec<Pages>>,

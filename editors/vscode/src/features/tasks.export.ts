@@ -16,6 +16,10 @@ interface ExportArgs {
   "png.pages"?: string | string[];
   "svg.pages"?: string | string[];
 
+  pageNumberTemplate?: string;
+  "png.pageNumberTemplate"?: string;
+  "svg.pageNumberTemplate"?: string;
+
   merged?: boolean;
   "svg.merged"?: boolean;
   "png.merged"?: boolean;
@@ -59,6 +63,7 @@ export interface PageMergeOpts {
 
 export interface ExportPngOpts {
   pages?: string[];
+  pageNumberTemplate?: string;
   merge?: PageMergeOpts;
   fill?: string;
   ppi?: number;
@@ -66,6 +71,7 @@ export interface ExportPngOpts {
 
 export interface ExportSvgOpts {
   pages?: string[];
+  pageNumberTemplate?: string;
   merge?: PageMergeOpts;
 }
 
@@ -190,8 +196,9 @@ const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => 
     opts(): ExportPngOpts {
       return {
         pages: ops.resolvePagesOpts("png"),
+        pageNumberTemplate: exportArgs["png.pageNumberTemplate"] ?? exportArgs["pageNumberTemplate"],
         merge: ops.resolveMergeOpts("png"),
-        ppi: exportArgs["png.ppi"] ?? 96,
+        ppi: exportArgs["png.ppi"],
         fill: exportArgs["png.fill"] ?? exportArgs["fill"],
       };
     },
@@ -201,6 +208,7 @@ const provideFormats = (exportArgs: ExportArgs, ops = exportOps(exportArgs)) => 
     opts(): ExportSvgOpts {
       return {
         pages: ops.resolvePagesOpts("svg"),
+        pageNumberTemplate: exportArgs["svg.pageNumberTemplate"] ?? exportArgs["pageNumberTemplate"],
         merge: ops.resolveMergeOpts("svg"),
       };
     },

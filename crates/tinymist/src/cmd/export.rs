@@ -42,6 +42,7 @@ struct ExportPdfOpts {
 struct ExportSvgOpts {
     /// Which pages to export. When unspecified, all pages are exported.
     pages: Option<Vec<Pages>>,
+    page_number_template: Option<String>,
     merge: Option<PageMerge>,
     /// Whether to open the exported file(s) after the export is done.
     open: Option<bool>,
@@ -52,6 +53,7 @@ struct ExportSvgOpts {
 struct ExportPngOpts {
     /// Which pages to export. When unspecified, all pages are exported.
     pages: Option<Vec<Pages>>,
+    page_number_template: Option<String>,
     merge: Option<PageMerge>,
     fill: Option<String>,
     ppi: Option<f32>,
@@ -201,6 +203,7 @@ impl ServerState {
             ProjectTask::ExportSvg(ExportSvgTask {
                 export,
                 pages: opts.pages,
+                page_number_template: opts.page_number_template,
                 merge: opts.merge,
             }),
             opts.open.unwrap_or_default(),
@@ -223,6 +226,7 @@ impl ServerState {
             ProjectTask::ExportPng(ExportPngTask {
                 export,
                 pages: opts.pages,
+                page_number_template: opts.page_number_template,
                 merge: opts.merge,
                 fill: opts.fill,
                 ppi,
