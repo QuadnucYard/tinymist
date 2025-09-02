@@ -1,6 +1,6 @@
 import van, { type State } from "vanjs-core";
 import type { ExportConfig, PreviewPage } from "../types";
-import { requestGeneratePreview } from "../../../vscode";
+import { requestGeneratePreview } from "@/api";
 
 const { div, h3, img, span, button } = van.tags;
 

@@ -202,16 +202,17 @@ const renderInput = (
 };
 
 export const DocumentUriSection = () => {
+  /*
   const updateDocUri = (newUri: string) => {
-    if (focusedDocUri.val) {
-      focusedDocUri.val = { ...focusedDocUri.val, uri: newUri };
+    if (exportToolDocUri.val) {
+      exportToolDocUri.val = { ...exportToolDocUri.val, uri: newUri };
     } else {
-      focusedDocUri.val = { version: 0, uri: newUri };
+      exportToolDocUri.val = { version: 0, uri: newUri };
     }
   };
 
   const toggleLock = () => {
-    isDocUriLocked.val = !isDocUriLocked.val;
+    exportToolDocUriLocked.val = !exportToolDocUriLocked.val;
   };
 
   return div(
@@ -225,7 +226,7 @@ export const DocumentUriSection = () => {
           class: "input flex-1",
           type: "text",
           placeholder: "Document URI (auto-detected)",
-          value: () => focusedDocUri.val?.uri || "",
+          value: () => exportToolDocUri.val?.uri || "",
           oninput: (e: Event) => {
             const target = e.target as HTMLInputElement;
             updateDocUri(target.value);
@@ -233,19 +234,21 @@ export const DocumentUriSection = () => {
         }),
         button(
           {
-            class: () => `btn btn-sm ${isDocUriLocked.val ? "btn-active" : "btn-secondary"}`,
+            class: () =>
+              `btn btn-sm ${exportToolDocUriLocked.val ? "btn-active" : "btn-secondary"}`,
             onclick: toggleLock,
-            title: () => (isDocUriLocked.val ? "Unlock (auto-update)" : "Lock (manual input)"),
+            title: () =>
+              exportToolDocUriLocked.val ? "Unlock (auto-update)" : "Lock (manual input)",
             style: "padding: 0.25rem",
           },
-          () => (isDocUriLocked.val ? "🔒" : "🔓"),
+          () => (exportToolDocUriLocked.val ? "🔒" : "🔓"),
         ),
       ),
       p({ class: "text-xs text-desc" }, () =>
-        isDocUriLocked.val
+        exportToolDocUriLocked.val
           ? "Input locked for manual editing"
           : "Auto-updates when document focus changes",
       ),
     ),
-  );
+  ); */
 };

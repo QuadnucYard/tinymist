@@ -1,7 +1,7 @@
 import van, { type State } from "vanjs-core";
 import type { ExportConfig } from "../types";
 import { generateTaskDefinition } from "../config/task-templates";
-import { requestCreateExportTask, requestExportDocument } from "@/vscode";
+import { requestExportDocument } from "@/api";
 
 const { div, h3, button, span, input, label } = van.tags;
 
@@ -56,7 +56,7 @@ export const ActionButtons =
         }
 
         // Request task creation from VSCode extension
-        requestCreateExportTask(taskDefinition);
+        // requestCreateExportTask(taskDefinition);
 
         exportStatus.val = "Task created successfully in tasks.json!";
 

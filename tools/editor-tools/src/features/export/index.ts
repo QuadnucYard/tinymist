@@ -11,7 +11,7 @@ import { OptionsPanel, DocumentUriSection } from "./components/options-panel";
 import { PreviewGrid } from "./components/preview-grid";
 import { ActionButtons } from "./components/action-buttons";
 
-const { div, h2 } = van.tags;
+const { div } = van.tags;
 
 function useExportConfig(): State<ExportConfig> {
   const stub = `:[[preview:ExportConfig]]:`;
@@ -45,26 +45,73 @@ const ExportTool = () => {
   console.log("Preview pages:", previewPages.val);
 
   return div(
-    { class: "export-tool-container flex flex-col gap-lg text-base-content" },
+    { class: "export-tool-container text-base-content" },
     Header({
       title: "Export Tool",
       description: "Configure and export your Typst documents to various formats",
     }),
 
     // Input Document Section
-    DocumentUriSection(),
+    div(
+      { style: "margin-bottom: 1.5rem;" },
+      div(
+        {
+          style: "margin-bottom: 1rem; font-size: 1.125rem; font-weight: 600;",
+        },
+        "Input Document",
+      ),
+      DocumentUriSection(),
+    ),
 
     // Format Selection
-    FormatSelector({ exportConfig }),
+    div(
+      { style: "margin-bottom: 1.5rem;" },
+      div(
+        {
+          style: "margin-bottom: 1rem; font-size: 1.125rem; font-weight: 600;",
+        },
+        "1. Choose Export Format",
+      ),
+      FormatSelector({ exportConfig }),
+    ),
 
     // Options Configuration
-    OptionsPanel({ exportConfig }),
+    div(
+      { style: "margin-bottom: 1.5rem;" },
+      div(
+        {
+          style: "margin-bottom: 1rem; font-size: 1.125rem; font-weight: 600;",
+        },
+        "2. Configure Options",
+      ),
+      OptionsPanel({ exportConfig }),
+    ),
 
     // Preview Section
-    exportConfig.val.format.supportsPreview ? PreviewGrid({ exportConfig, previewPages }) : null,
+    exportConfig.val.format.supportsPreview
+      ? div(
+          { style: "margin-bottom: 1.5rem;" },
+          div(
+            {
+              style: "margin-bottom: 1rem; font-size: 1.125rem; font-weight: 600;",
+            },
+            "3. Preview",
+          ),
+          PreviewGrid({ exportConfig, previewPages }),
+        )
+      : null,
 
     // Export Actions
-    ActionButtons({ exportConfig }),
+    div(
+      { style: "margin-bottom: 1.5rem;" },
+      div(
+        {
+          style: "margin-bottom: 1rem; font-size: 1.125rem; font-weight: 600;",
+        },
+        exportConfig.val.format.supportsPreview ? "4. Export Actions" : "3. Export Actions",
+      ),
+      ActionButtons({ exportConfig }),
+    ),
   );
 };
 

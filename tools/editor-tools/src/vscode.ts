@@ -1,6 +1,5 @@
 import van from "vanjs-core";
-import type { fontsExportConfigure } from "./features/summary";
-import type { TaskDefinition } from "./features/export/types";
+export * from "./api"; // compatibility export
 
 const vscodeAPI = typeof acquireVsCodeApi !== "undefined" && acquireVsCodeApi();
 
@@ -102,10 +101,12 @@ export function setupVscodeChannel() {
         case "focusedDocUri": {
           const incomingData = event.data.data as VersionedDocUri;
           // Only update if not locked and version is newer (or no current version)
-          if (!isDocUriLocked.val &&
-              incomingData &&
-              incomingData.uri &&
-              (!focusedDocUri.val || incomingData.version > focusedDocUri.val.version)) {
+          if (
+            !isDocUriLocked.val &&
+            incomingData &&
+            incomingData.uri &&
+            (!focusedDocUri.val || incomingData.version > focusedDocUri.val.version)
+          ) {
             focusedDocUri.val = incomingData;
           }
           break;
@@ -134,97 +135,6 @@ export function setupVscodeChannel() {
   }
 }
 
-export function requestSavePackageData(data: unknown) {
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "savePackageData", data });
-  }
-}
+class MessageHandler {}
 
-export function requestSaveFontsExportConfigure(data: fontsExportConfigure) {
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "saveFontsExportConfigure", data });
-  }
-}
-
-export function requestInitTemplate(packageSpec: string) {
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "initTemplate", packageSpec });
-  }
-}
-
-export function requestRevealPath(path: string) {
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "revealPath", path });
-  }
-}
-
-export function stopServerProfiling() {
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "stopServerProfiling" });
-  }
-}
-export interface TextEdit {
-  range?: undefined;
-  newText:
-    | string
-    | {
-        kind: "by-mode";
-        math?: string;
-        markup?: string;
-        code?: string;
-        rest?: string;
-      };
-}
-
-export function copyToClipboard(content: string) {
-  if (content === undefined) {
-    return;
-  }
-
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "copyToClipboard", content });
-  } else {
-    // copy to clipboard
-    navigator.clipboard.writeText(content);
-  }
-}
-
-export function requestTextEdit(edit: TextEdit) {
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "editText", edit });
-  } else {
-    // copy to clipboard
-    navigator.clipboard.writeText(
-      typeof edit.newText === "string"
-        ? edit.newText
-        : edit.newText.code || edit.newText.rest || "",
-    );
-  }
-}
-
-export function saveDataToFile({
-  data,
-  path,
-  option,
-}: {
-  data: string;
-  path?: string;
-  option?: Record<string, unknown>;
-}) {
-  if (vscodeAPI?.postMessage) {
-    vscodeAPI.postMessage({ type: "saveDataToFile", data, path, option });
-  }
-}
-
-export function requestGeneratePreview(format: string, extraArgs: Record<string, unknown>) {
-  console.log("requestGeneratePreview", format, extraArgs);
-  vscodeAPI?.postMessage?.({ type: "generatePreview", format, extraArgs: extraArgs ?? {} });
-}
-
-export function requestExportDocument(format: string, extraArgs: Record<string, unknown>) {
-  vscodeAPI?.postMessage?.({ type: "exportDocument", format, extraArgs: extraArgs ?? {} });
-}
-
-export function requestCreateExportTask(taskDefinition: TaskDefinition) {
-  vscodeAPI?.postMessage?.({ type: "createExportTask", taskDefinition });
-}
+export function subscribeMessage(type: string, callback: (data: any) => void) {}
