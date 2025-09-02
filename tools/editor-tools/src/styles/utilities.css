@@ -18,8 +18,14 @@
   font-size: 1.5rem;
 }
 
+.font-medium {
+  font-weight: 500;
+}
+.font-semibold {
+  font-weight: 600;
+}
 .font-bold {
-  font-weight: bold;
+  font-weight: 700;
 }
 
 .italic {
@@ -67,6 +73,13 @@
 }
 
 /* Spacing */
+.mb-sm {
+  margin-bottom: 0.5rem;
+}
+.mb-md {
+  margin-bottom: 1.0rem;
+}
+
 .gap-xs {
   gap: 0.25rem;
 }
@@ -75,6 +88,9 @@
 }
 .gap-md {
   gap: 1rem;
+}
+.gap-lg {
+  gap: 1.5rem;
 }
 
 /* Interaction */
