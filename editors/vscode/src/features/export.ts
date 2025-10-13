@@ -26,74 +26,74 @@ export interface QuickExportFormatMeta {
 export const quickExports: QuickExportFormatMeta[] = [
   {
     label: "PDF",
-    description: l10nMsg("Export as PDF"),
+    description: l10nMsg("export-pdf.description"),
     exportKind: "Pdf",
   },
   {
-    label: l10nMsg("PNG (Merged)"),
-    description: l10nMsg("Export as a single PNG by merging pages"),
+    label: l10nMsg("export-png-merged.label"),
+    description: l10nMsg("export-png-merged.description"),
     exportKind: "Png",
     extraOpts: { page: { merged: { gap: "0pt" } } },
   },
   {
-    label: l10nMsg("SVG (Merged)"),
-    description: l10nMsg("Export as a single SVG by merging pages"),
+    label: l10nMsg("export-svg-merged.label"),
+    description: l10nMsg("export-svg-merged.description"),
     exportKind: "Svg",
     extraOpts: { page: { merged: { gap: "0pt" } } },
   },
   {
     label: "HTML",
-    description: l10nMsg("Export as HTML"),
+    description: l10nMsg("export-html.description"),
     exportKind: "Html",
   },
   {
     label: "Markdown",
-    description: l10nMsg("Export as Markdown"),
+    description: l10nMsg("export-markdown.description"),
     exportKind: "Markdown",
   },
   {
     label: "TeX",
-    description: l10nMsg("Export as TeX"),
+    description: l10nMsg("export-tex.description"),
     exportKind: "TeX",
   },
   {
     label: "Text",
-    description: l10nMsg("Export as Text"),
+    description: l10nMsg("export-text.description"),
     exportKind: "Text",
   },
   // {
   //   label: "Query (JSON)",
-  //   description: l10nMsg("Query current document and export the result as a JSON file"),
+  //   description: l10nMsg("export-query-json.description"),
   //   exportKind: "Query",
   // },
   // {
   //   label: "Query (YAML)",
-  //   description: l10nMsg("Query current document and export the result as a YAML file"),
+  //   description: l10nMsg("export-query-yaml.description"),
   //   exportKind: "Query",
   // },
   // {
   //   label: "Query (Task)",
-  //   description: l10nMsg("Query current document and export the result as a file. We will ask a few questions and update the tasks.json file for you."),
+  //   description: l10nMsg("export-query-task.description"),
   //   exportKind: "Query",
   // },
   {
-    label: l10nMsg("PNG (First Page)"),
-    description: l10nMsg("Export the first page as a single PNG"),
+    label: l10nMsg("export-png-first.label"),
+    description: l10nMsg("export-png-first.description"),
     exportKind: "Png",
   },
   // {
-  //   label: l10nMsg("PNG (Task)"),
-  //   description: l10nMsg("Export as PNG (and update tasks.json)"),
+  //   label: l10nMsg("export-png-task.label"),
+  //   description: l10nMsg("export-png-task.description"),
   //   exportKind: "Png",
   // },
   {
-    label: l10nMsg("SVG (First Page)"),
-    description: l10nMsg("Export the first page as a single SVG"),
+    label: l10nMsg("export-svg-first.label"),
+    description: l10nMsg("export-svg-first.description"),
     exportKind: "Svg",
   },
   // {
-  //   label: l10nMsg("SVG (Task)"),
-  //   description: l10nMsg("Export as SVG (and update tasks.json)"),
+  //   label: l10nMsg("export-svg-task.label"),
+  //   description: l10nMsg("export-svg-task.description"),
   //   exportKind: "Svg",
   // },
 ];
@@ -111,13 +111,9 @@ async function askAndRun<T>(
   if (picked.exportKind === "TeX") {
     picked.extraOpts = picked.extraOpts || {};
     const processor = await vscode.window.showInputBox({
-      title: l10nMsg("TeX processor"),
-      placeHolder: l10nMsg(
-        "A typst file help export to TeX, e.g. `/ieee-tex.typ` or `@local/ieee-tex:0.1.0`",
-      ),
-      prompt: l10nMsg(
-        "Hint: you can create and find local packages in the sidebar. See https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper for more information.",
-      ),
+      title: l10nMsg("export-tex-processor.title"),
+      placeHolder: l10nMsg("export-tex-processor.placeholder"),
+      prompt: l10nMsg("export-tex-processor.prompt"),
     });
 
     if (processor) {
@@ -129,13 +125,13 @@ async function askAndRun<T>(
 }
 
 export async function commandAskAndExport(): Promise<string | undefined> {
-  return await askAndRun(l10nMsg("Pick a method to export"), (picked) => {
+  return await askAndRun(l10nMsg("export-pick.title"), (picked) => {
     return commandExport(picked.exportKind, picked.extraOpts);
   });
 }
 
 export async function commandAskAndShow(): Promise<void> {
-  return await askAndRun(l10nMsg("Pick a method to export and show"), (picked) => {
+  return await askAndRun(l10nMsg("export-pick-show.title"), (picked) => {
     return commandShow(picked.exportKind, picked.extraOpts);
   });
 }

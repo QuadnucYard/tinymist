@@ -5,100 +5,102 @@
 en = " (Preview)"
 zh = " (预览)"
 
-["A typst file help export to TeX, e.g. `/ieee-tex.typ` or `@local/ieee-tex:0.1.0`"]
-en = "A typst file help export to TeX, e.g. `/ieee-tex.typ` or `@local/ieee-tex:0.1.0`"
-zh = "提供一个帮助导出为 TeX 的 typst 文件，例如 `/ieee-tex.typ` 或 `@local/ieee-tex:0.1.0`"
-
-["Export as HTML"]
+["export-html.description"]
 en = "Export as HTML"
 zh = "导出为 HTML"
 
-["Export as Markdown"]
+["export-markdown.description"]
 en = "Export as Markdown"
 zh = "导出为 Markdown"
 
-["Export as PDF"]
+["export-pdf.description"]
 en = "Export as PDF"
 zh = "导出为 PDF"
 
-["Export as PNG (and update tasks.json)"]
-en = "Export as PNG (and update tasks.json)"
-zh = "导出为 PNG (并更新 tasks.json)"
-
-["Export as SVG (and update tasks.json)"]
-en = "Export as SVG (and update tasks.json)"
-zh = "导出为 SVG (并更新 tasks.json)"
-
-["Export as TeX"]
-en = "Export as TeX"
-
-["Export as Text"]
-en = "Export as Text"
-zh = "导出为纯文本文件"
-
-["Export as a single PNG by merging pages"]
-en = "Export as a single PNG by merging pages"
-zh = "合并页面并导出为单个 PNG"
-
-["Export as a single SVG by merging pages"]
-en = "Export as a single SVG by merging pages"
-zh = "合并页面并导出为单个 SVG"
-
-["Export the first page as a single PNG"]
-en = "Export the first page as a single PNG"
-zh = "导出首页为单个 PNG"
-
-["Export the first page as a single SVG"]
-en = "Export the first page as a single SVG"
-zh = "导出首页为单个 SVG"
-
-["Hint: you can create and find local packages in the sidebar. See https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper for more information."]
-en = "Hint: you can create and find local packages in the sidebar. See https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper for more information."
-zh = "提示：您可以在侧边栏中创建和查找本地包。有关更多信息，请参见 https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper。"
-
-["PNG (First Page)"]
-en = "PNG (First Page)"
-zh = "PNG (首页)"
-
-["PNG (Merged)"]
-en = "PNG (Merged)"
-zh = "PNG (合并)"
-
-["PNG (Task)"]
-en = "PNG (Task)"
-zh = "PNG (任务)"
-
-["Pick a method to export and show"]
+["export-pick-show.title"]
 en = "Pick a method to export and show"
+zh = "选择导出并显示的方式"
 
-["Pick a method to export"]
+["export-pick.title"]
 en = "Pick a method to export"
 zh = "选择导出方式"
 
-["Query current document and export the result as a JSON file"]
+["export-png-first.description"]
+en = "Export the first page as a single PNG"
+zh = "导出首页为单个 PNG"
+
+["export-png-first.label"]
+en = "PNG (First Page)"
+zh = "PNG (首页)"
+
+["export-png-merged.description"]
+en = "Export as a single PNG by merging pages"
+zh = "合并页面并导出为单个 PNG"
+
+["export-png-merged.label"]
+en = "PNG (Merged)"
+zh = "PNG (合并)"
+
+["export-png-task.description"]
+en = "Export as PNG (and update tasks.json)"
+zh = "导出为 PNG (并更新 tasks.json)"
+
+["export-png-task.label"]
+en = "PNG (Task)"
+zh = "PNG (任务)"
+
+["export-query-json.description"]
 en = "Query current document and export the result as a JSON file"
 zh = "查询当前文档并导出结果为 JSON 文件"
 
-["Query current document and export the result as a YAML file"]
-en = "Query current document and export the result as a YAML file"
-zh = "查询当前文档并导出结果为 YAML 文件"
-
-["Query current document and export the result as a file. We will ask a few questions and update the tasks.json file for you."]
+["export-query-task.description"]
 en = "Query current document and export the result as a file. We will ask a few questions and update the tasks.json file for you."
 zh = "查询当前文档并导出结果为文件。我们将会询问一些问题并为您更新 tasks.json 文件。"
 
-["SVG (First Page)"]
+["export-query-yaml.description"]
+en = "Query current document and export the result as a YAML file"
+zh = "查询当前文档并导出结果为 YAML 文件"
+
+["export-svg-first.description"]
+en = "Export the first page as a single SVG"
+zh = "导出首页为单个 SVG"
+
+["export-svg-first.label"]
 en = "SVG (First Page)"
 zh = "SVG (首页)"
 
-["SVG (Merged)"]
+["export-svg-merged.description"]
+en = "Export as a single SVG by merging pages"
+zh = "合并页面并导出为单个 SVG"
+
+["export-svg-merged.label"]
 en = "SVG (Merged)"
 zh = "SVG (合并)"
 
-["SVG (Task)"]
+["export-svg-task.description"]
+en = "Export as SVG (and update tasks.json)"
+zh = "导出为 SVG (并更新 tasks.json)"
+
+["export-svg-task.label"]
 en = "SVG (Task)"
 zh = "SVG (任务)"
 
-["TeX processor"]
+["export-tex-processor.placeholder"]
+en = "A typst file help export to TeX, e.g. `/ieee-tex.typ` or `@local/ieee-tex:0.1.0`"
+zh = "提供一个帮助导出为 TeX 的 typst 文件，例如 `/ieee-tex.typ` 或 `@local/ieee-tex:0.1.0`"
+
+["export-tex-processor.prompt"]
+en = "Hint: you can create and find local packages in the sidebar. See https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper for more information."
+zh = "提示：您可以在侧边栏中创建和查找本地包。有关更多信息，请参见 https://github.com/Myriad-Dreamin/tinymist/tree/bc15eb55cee9f9b048aafd5f22472894961a1f51/editors/vscode/e2e-workspaces/ieee-paper。"
+
+["export-tex-processor.title"]
 en = "TeX processor"
 zh = "TeX 导出的处理脚本"
+
+["export-tex.description"]
+en = "Export as TeX"
+zh = "导出为 TeX"
+
+["export-text.description"]
+en = "Export as Text"
+zh = "导出为纯文本文件"

@@ -14,10 +14,12 @@ use rayon::{
 };
 use rustc_hash::FxHashMap;
 
-/// A map of translations.
-pub type TranslationMap = FxHashMap<String, String>;
+type MsgId = String;
+type LangId = String;
+/// A map of translations. The stored message is raw form, including quotes.
+pub type TranslationMap = FxHashMap<LangId, String>;
 /// A set of translation maps.
-pub type TranslationMapSet = FxHashMap<String, TranslationMap>;
+pub type TranslationMapSet = FxHashMap<MsgId, TranslationMap>;
 
 static ALL_TRANSLATIONS: OnceLock<TranslationMapSet> = OnceLock::new();
 static LOCALE_TRANSLATIONS: RwLock<Option<&'static TranslationMap>> = RwLock::new(Option::None);
@@ -68,7 +70,7 @@ pub fn load_translations(input: &str) -> anyhow::Result<TranslationMapSet> {
 
 /// Updates disk translations with new key-value pairs.
 pub fn update_disk_translations(
-    mut key_values: Vec<(String, String)>,
+    mut key_values: Vec<(MsgId, String)>,
     output: &Path,
 ) -> anyhow::Result<()> {
     key_values.sort_by(|(key_x, _), (key_y, _)| key_x.cmp(key_y));
@@ -91,7 +93,7 @@ pub fn update_disk_translations(
 
 /// Updates a map of translations with new key-value pairs.
 pub fn update_translations(
-    key_values: Vec<(String, String)>,
+    key_values: Vec<(MsgId, String)>,
     translations: &mut TranslationMapSet,
 ) {
     let used = key_values.iter().map(|e| &e.0).collect::<HashSet<_>>();
@@ -103,7 +105,8 @@ pub fn update_translations(
         translations
             .entry(key)
             .or_default()
-            .insert(en.clone(), value);
+            .entry(en.clone())
+            .or_insert(value);
     }
 }
 
@@ -120,11 +123,11 @@ pub fn serialize_translations(translations: TranslationMapSet) -> String {
         result.push_str(&format!("\n[{key}]\n"));
 
         let en = data.remove("en").expect("en translation is missing");
-        result.push_str(&format!("en = {en}\n"));
 
         // sort by lang
         let mut data = data.into_iter().collect::<Vec<_>>();
         data.sort_by(|a, b| a.0.cmp(&b.0));
+        data.insert(0, ("en".to_string(), en)); // en is always first
 
         for (lang, value) in data {
             result.push_str(&format!("{lang} = {value}\n"));
